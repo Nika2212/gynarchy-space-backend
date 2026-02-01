@@ -36,11 +36,13 @@ export class DBService {
 
   private async check(): Promise<void> {
     try {
-      this.httpService.head(`${this.base}`)
-        .subscribe({
-          next: () => Console.success('Strapi initialized successfully'),
-          error: (err: Error) => Console.error(`Strapi initialization error: ${err}`),
-        });
+      this.httpService.head(`${this.base}`).subscribe({
+        next: () => Console.success('Strapi initialized successfully'),
+        error: (err: Error) => {
+          console.log(err);
+          Console.error(`Strapi initialization error: ${err}`);
+        },
+      });
     } catch (e) {
       Console.error(e.message);
     }
