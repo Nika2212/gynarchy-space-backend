@@ -30,7 +30,7 @@ export class StorageService {
       );
       Console.success('WASABI initialized successfully.');
     } catch (error) {
-      Console.error(error.message);
+      Console.error(`WASABI initialization error: ${error}`);
     }
   }
 }

@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { CryptaService } from './core/services/crypta.service';
 import { StorageService } from './core/services/storage.service';
+import { DBService } from './core/services/db.service';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { StorageService } from './core/services/storage.service';
   providers: [
     CryptaService,
     StorageService,
+    DBService,
   ],
 })
 export class AppModule {
