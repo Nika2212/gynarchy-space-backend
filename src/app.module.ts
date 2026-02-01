@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { CryptaService } from './core/services/crypta.service';
+import { StorageService } from './core/services/storage.service';
 
 @Module({
   imports: [
@@ -15,7 +16,8 @@ import { CryptaService } from './core/services/crypta.service';
   ],
   controllers: [],
   providers: [
-    CryptaService
+    CryptaService,
+    StorageService,
   ],
 })
 export class AppModule {
