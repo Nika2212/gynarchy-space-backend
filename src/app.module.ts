@@ -16,9 +16,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   providers: [],
 })
 export class AppModule {
-  constructor(
-    private readonly configService: ConfigService,
-  ) {
+  constructor(private readonly configService: ConfigService) {
     console.log(this.configService.get<string>('CONFIG_VERSION'));
   }
 }
