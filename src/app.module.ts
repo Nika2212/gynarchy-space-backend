@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
+import { CryptaService } from './core/services/crypta.service';
 
 @Module({
   imports: [
@@ -13,10 +14,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     }),
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    CryptaService
+  ],
 })
 export class AppModule {
-  constructor(private readonly configService: ConfigService) {
-    console.log(this.configService.get<string>('CONFIG_VERSION'));
-  }
 }
