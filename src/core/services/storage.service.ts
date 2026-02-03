@@ -28,7 +28,7 @@ export class StorageService {
           Bucket: this.configService.get('WASABI_BUCKET'),
         }),
       );
-      Console.success('WASABI initialized successfully.');
+      Console.success('WASABI initialized successfully');
     } catch (error) {
       Console.error(`WASABI initialization error: ${error}`);
     }

@@ -1,17 +1,17 @@
 export class Console {
   public static success(message: string): void {
-    return console.log(`✅ [SUCCESS] ${message}`);
+    return console.log(`✅  [SUCCESS] ${message}`);
   }
 
   public static info(message: string): void {
-    return console.log(`🔵 [INFO] ${message}`);
+    return console.log(`🔵  [INFO] ${message}`);
   }
 
   public static warn(message: string): void {
-    return console.log(`🟡 [WARNING] ${message}`);
+    return console.log(`🟡  [WARNING] ${message}`);
   }
 
   public static error(message: string): void {
-    return console.log(`❌ [ERROR] ${message}`);
+    return console.log(`❌  [ERROR] ${message}`);
   }
 }
