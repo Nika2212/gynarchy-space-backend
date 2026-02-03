@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CryptaService } from './core/services/crypta.service';
 import { StorageService } from './core/services/storage.service';
 import { DBService } from './core/services/db.service';
+import { MediaController } from './core/controllers/media.controller';
 
 @Module({
   imports: [
@@ -15,7 +16,9 @@ import { DBService } from './core/services/db.service';
       isGlobal: true,
     }),
   ],
-  controllers: [],
+  controllers: [
+    MediaController,
+  ],
   providers: [
     CryptaService,
     StorageService,
