@@ -51,7 +51,7 @@ export class XMDCentre {
         return '';
       }
     } catch (e) {
-      throw new InternalServerErrorException('An unexpected error occurred in XMDCentre ', e.message);
+      throw new InternalServerErrorException(`An unexpected error occurred in XMDCentre. ${e?.response?.status || e.message}`);
     }
   }
 

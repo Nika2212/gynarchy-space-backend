@@ -13,7 +13,7 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
 
   const XMDInstance = new XMDCentre();
-        // XMDInstance.search('gynarchy').then((data) => console.log(data));
-        XMDInstance.getUrl('https://www.xmegadrive.com/videos/mistress-courtneys-fetish-lair-puppy-training/');
+        XMDInstance.search('gynarchy').then((data) => console.log(data));
+        // XMDInstance.getUrl('https://www.xmegadrive.com/videos/mistress-courtneys-fetish-lair-puppy-training/');
 }
 void bootstrap();
