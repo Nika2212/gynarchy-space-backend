@@ -11,7 +11,7 @@ export class Console {
     return console.log(`🟡  [WARNING] ${message}`);
   }
 
-  public static error(message: string): void {
-    return console.log(`❌  [ERROR] ${message}`);
+  public static error(...args: unknown[]): void {
+    return console.log(`❌  [ERROR]`, ...args);
   }
 }
