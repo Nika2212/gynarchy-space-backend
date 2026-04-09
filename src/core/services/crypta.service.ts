@@ -8,7 +8,7 @@ export class CryptaService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  encrypt(text: string): string {
+  public encrypt(text: string): string {
     const key = this.configService.get<string>('CRYPTA') as string;
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(this.algorithm, key, iv) as crypto.CipherGCM;
@@ -19,7 +19,7 @@ export class CryptaService {
     return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
-  decrypt(hash: string): string {
+  public decrypt(hash: string): string {
     const key = this.configService.get<string>('CRYPTA') as string;
     const [ivHex, tagHex, encryptedHex] = hash.split(':');
 

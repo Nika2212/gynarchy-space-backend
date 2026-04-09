@@ -1,0 +1,19 @@
+$kind: http-request
+name: Find All
+url: localhost:3000/media/?keyword=gynarchy&page=1
+method: GET
+queryParams:
+  - key: keyword
+    value: gynarchy
+  - key: page
+    value: "1"
+body:
+  type: json
+  content: "{\r
+
+    \    \"page\": 1,\r
+
+    \    \"keyword\": \"gynarchy\"\r
+
+    }"
+order: 1000

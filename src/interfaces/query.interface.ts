@@ -1,6 +1,6 @@
 export interface IFindAll {
   keyword: string;
-  page: string;
+  page: number;
   sort: string;
   filter: string;
 }

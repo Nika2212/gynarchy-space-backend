@@ -1,22 +1,25 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
-import { InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-import { AppConfigProcess } from '../main';
 import { Console } from '../core/helpers/console';
 import { IMediaInfo } from '../interfaces/media-info.interface';
 import { timeToMs } from '../core/helpers/time';
+import { encryptUrlToShortToken } from '../core/helpers/utils';
 
-const KT_PLAYER_TIMEOUT = 200;
-const KT_PLAYER_RESOLVE_DELAY = 100;
-const KT_PLAYER_PATH = path.join(process.cwd(), 'dist', 'assets', 'kt_player.js');
-const MIN_SEARCH_KEYWORD_LENGTH = 1;
-const MAX_SEARCH_KEYWORD_LENGTH = 200;
-const MIN_PAGE_NUMBER = 1;
-const MAX_PAGE_NUMBER = 1000;
+export const PER_PAGE_SIZE: number = 24;
+
+const KT_PLAYER_TIMEOUT: number = 200;
+const KT_PLAYER_RESOLVE_DELAY: number = 100;
+const KT_PLAYER_PATH: string = path.join(process.cwd(), 'dist', 'assets', 'kt_player.js');
+const MIN_SEARCH_KEYWORD_LENGTH: number = 1;
+const MAX_SEARCH_KEYWORD_LENGTH: number = 200;
+const MIN_PAGE_NUMBER: number = 1;
+const MAX_PAGE_NUMBER: number = 1000;
 
 class XMDCentreException extends InternalServerErrorException {
   constructor(message: string, meta?: Record<string, any>) {
@@ -30,13 +33,14 @@ class MediaExtractionException extends XMDCentreException {
   }
 }
 
+@Injectable()
 export class XMDCentre {
   private readonly base: string;
   private readonly http: AxiosInstance;
   private ktPlayerCache: string | null = null;
 
-  constructor() {
-    this.base = AppConfigProcess.get<string>('XMD') as string;
+  constructor(private readonly configService: ConfigService) {
+    this.base = this.configService.get<string>('XMD') as string;
 
     if (!this.base) {
       throw new XMDCentreException('XMD base URL is not configured');
@@ -59,7 +63,7 @@ export class XMDCentre {
     });
   }
 
-  async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
+  public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
     this.validateSearchInput(keyword, page);
 
     try {
@@ -72,6 +76,7 @@ export class XMDCentre {
           from_videos: page,
           from_albums: page,
         },
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
       });
 
       return this.parseSearch(data);
@@ -80,7 +85,7 @@ export class XMDCentre {
     }
   }
 
-  async getUrl(url: string): Promise<string> {
+  public async getUrl(url: string): Promise<string> {
     this.validateUrlInput(url);
 
     try {
@@ -124,9 +129,8 @@ export class XMDCentre {
         title: node.find('strong.title').text().trim(),
         duration: timeToMs(node.find('.duration').text().trim()),
         postedAt: node.find('.added').text().trim(),
-        thumbnailSrc: this.expandScreenshots(thumb),
-        url,
-        remoteSrc: '',
+        thumbnailSrc: this.expandScreenshots(thumb).map(url => `/images/${encryptUrlToShortToken(url)}`),
+        url: `/watch/${encryptUrlToShortToken(url)}`,
         description: '',
       });
     });

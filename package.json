@@ -30,6 +30,7 @@
     "axios": "^1.13.4",
     "cheerio": "^1.2.0",
     "jsdom": "^28.0.0",
+    "nanoid": "^5.1.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -70,6 +71,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(@exodus|@acemir|@asamuzakjp|cheerio|parse5|htmlparser2|dom-serializer|domelementtype|domhandler|domutils|entities|css-what|css-select|boolbase|nth-check|jsdom|cssstyle|data-urls|decimal\\.js|html-encoding-sniffer|is-potential-custom-element-name|saxes|symbol-tree|w3c-xmlserializer|webidl-conversions|whatwg-mimetype|whatwg-url|whatwg-encoding|xml-name-validator|tr46|nanoid)/)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
