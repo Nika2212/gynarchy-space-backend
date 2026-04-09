@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
-import { CryptaService } from './core/services/crypta.service';
 import { MediaController } from './core/controllers/media.controller';
 import { MediaService } from './core/services/media.service';
 import { XMDCentre } from './centres/XMD.centre';
@@ -24,7 +23,6 @@ import { DatabaseModule } from './database.module';
   providers: [
     XMDCentre,
     MediaService,
-    CryptaService,
     // StorageService,
   ],
 })

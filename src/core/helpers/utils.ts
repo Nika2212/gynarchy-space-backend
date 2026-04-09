@@ -103,7 +103,7 @@ export function parseIntStrict(value: unknown, radix = 10): number | undefined {
   return n;
 }
 
-function assertValidHttpUrl(url: string): void {
+export function assertValidHttpUrl(url: string): void {
   try {
     const u = new URL(url);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') {
