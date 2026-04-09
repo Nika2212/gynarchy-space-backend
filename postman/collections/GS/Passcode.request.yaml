@@ -1,12 +1,12 @@
 $kind: http-request
 name: Passcode
-url: localhost:3000/api/security
+url: localhost:3000/api/security/pa
 method: POST
 body:
   type: json
   content: "{\r
 
-    \    \"passcode\": \"123456\"\r
+    \    \"passcode\": \"123457\"\r
 
     }"
 order: 2247

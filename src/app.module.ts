@@ -8,6 +8,7 @@ import { DatabaseModule } from './database.module';
 import { SecurityGuard, SecurityService } from './core/services/security.service';
 import { JwtModule } from '@nestjs/jwt';
 import { SecurityController } from './core/controllers/security.controller';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -26,14 +27,14 @@ import { SecurityController } from './core/controllers/security.controller';
       }),
       inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([{
+      limit: 512,
+      ttl: 30000,
+      blockDuration: 30000
+    }]),
     DatabaseModule,
   ],
   controllers: [MediaController, SecurityController],
-  providers: [
-    SecurityService,
-    SecurityGuard,
-    XMDCentre,
-    MediaService,
-  ],
+  providers: [SecurityService, SecurityGuard, XMDCentre, MediaService],
 })
 export class AppModule {}
