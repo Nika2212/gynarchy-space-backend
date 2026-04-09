@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { promises as fs } from 'fs';
@@ -273,28 +273,32 @@ export class XMDCentre {
 
   private validateSearchInput(keyword: string, page: number): void {
     if (typeof keyword !== 'string' || keyword.trim().length < MIN_SEARCH_KEYWORD_LENGTH) {
-      throw new XMDCentreException(`Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`);
+      throw new BadRequestException(
+        `Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`,
+      );
     }
 
     if (keyword.length > MAX_SEARCH_KEYWORD_LENGTH) {
-      throw new XMDCentreException(`Invalid keyword: exceeds maximum length of ${MAX_SEARCH_KEYWORD_LENGTH}`);
+      throw new BadRequestException(`Invalid keyword: exceeds maximum length of ${MAX_SEARCH_KEYWORD_LENGTH}`);
     }
 
     if (!Number.isInteger(page) || page < MIN_PAGE_NUMBER || page > MAX_PAGE_NUMBER) {
-      throw new XMDCentreException(`Invalid page: must be an integer between ${MIN_PAGE_NUMBER} and ${MAX_PAGE_NUMBER}`);
+      throw new BadRequestException(
+        `Invalid page: must be an integer between ${MIN_PAGE_NUMBER} and ${MAX_PAGE_NUMBER}`,
+      );
     }
   }
 
   private validateUrlInput(url: string): void {
     if (typeof url !== 'string' || url.trim().length === 0) {
-      throw new XMDCentreException('Invalid URL: must be a non-empty string');
+      throw new BadRequestException('Invalid URL: must be a non-empty string');
     }
 
     try {
       new URL(url);
     } catch {
       if (!url.startsWith('/') && !url.startsWith('./')) {
-        throw new XMDCentreException('Invalid URL: must be a valid URL or relative path');
+        throw new BadRequestException('Invalid URL: must be a valid URL or relative path');
       }
     }
   }

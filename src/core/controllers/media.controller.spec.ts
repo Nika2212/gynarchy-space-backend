@@ -1,9 +1,9 @@
 import { INestApplication, InternalServerErrorException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
-import { MediaController } from './media.controller';
-import { MediaService } from '../services/media.service';
 import type { IMediaContainer } from '../../interfaces/media-container.interface';
+import { MediaService } from '../services/media.service';
+import { MediaController } from './media.controller';
 
 describe('MediaController', () => {
   let app: INestApplication;

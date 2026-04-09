@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PER_PAGE_SIZE, XMDCentre } from '../../centres/XMD.centre';
 import type { IMediaInfo } from '../../interfaces/media-info.interface';
@@ -8,7 +9,6 @@ function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
     title: 't',
     url: '/watch/x',
     thumbnailSrc: ['/1.jpg', '/2.jpg', '/3.jpg', '/4.jpg', '/5.jpg', '/6.jpg'],
-    remoteSrc: '',
     description: '',
     postedAt: '',
     duration: 0,
@@ -84,5 +84,12 @@ describe('MediaService', () => {
     await expect(
       service.findAll({ keyword: 'k', page: 1, sort: '', filter: '' }),
     ).rejects.toThrow('upstream');
+  });
+
+  it('propagates BadRequestException from XMDCentre.search', async () => {
+    search.mockRejectedValue(new BadRequestException('Invalid keyword'));
+    await expect(
+      service.findAll({ keyword: '', page: 1, sort: '', filter: '' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { XMDCentre } from './XMD.centre';
 
@@ -69,19 +70,20 @@ describe('XMDCentre (integration)', () => {
       NETWORK_TIMEOUT,
     );
 
-    it('should throw on empty keyword', async () => {
-      await expect(centre.search('')).rejects.toThrow();
+    it('should reject empty keyword with 400 Bad Request', async () => {
+      await expect(centre.search('')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.search('   ')).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('should throw on keyword exceeding max length', async () => {
-      await expect(centre.search('a'.repeat(201))).rejects.toThrow();
+    it('should reject keyword exceeding max length with 400 Bad Request', async () => {
+      await expect(centre.search('a'.repeat(201))).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('should throw on invalid page numbers', async () => {
-      await expect(centre.search(searchKeyword, 0)).rejects.toThrow();
-      await expect(centre.search(searchKeyword, -1)).rejects.toThrow();
-      await expect(centre.search(searchKeyword, 1001)).rejects.toThrow();
-      await expect(centre.search(searchKeyword, 1.5)).rejects.toThrow();
+    it('should reject invalid page numbers with 400 Bad Request', async () => {
+      await expect(centre.search(searchKeyword, 0)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.search(searchKeyword, -1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.search(searchKeyword, 1001)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.search(searchKeyword, 1.5)).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it(
@@ -99,12 +101,12 @@ describe('XMDCentre (integration)', () => {
    * resolving those over HTTP may 404 until the server maps tokens → real routes. Validation-only tests stay on.
    */
   describe('getUrl()', () => {
-    it('should throw on empty URL', async () => {
-      await expect(centre.getUrl('')).rejects.toThrow();
+    it('should reject empty URL with 400 Bad Request', async () => {
+      await expect(centre.getUrl('')).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('should throw on invalid URL format', async () => {
-      await expect(centre.getUrl('not-a-url')).rejects.toThrow();
+    it('should reject invalid URL format with 400 Bad Request', async () => {
+      await expect(centre.getUrl('not-a-url')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });
