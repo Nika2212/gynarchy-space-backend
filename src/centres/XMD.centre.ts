@@ -94,7 +94,7 @@ export class XMDCentre implements OnModuleDestroy {
     });
   }
 
-  onModuleDestroy(): void {
+  public onModuleDestroy(): void {
     this.initAbort.abort();
   }
 

@@ -18,23 +18,23 @@ export class DatabaseService implements OnModuleInit {
     private readonly configService: ConfigService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  public async onModuleInit(): Promise<void> {
     // await this.wipeAllMedias();
   }
 
-  async wipeAllMedias(): Promise<void> {
+  public async wipeAllMedias(): Promise<void> {
     await this.db.delete(medias);
   }
 
-  rowsToMedias(rows: NewMediaRow[]): IMediaInfo[] {
+  public rowsToMedias(rows: NewMediaRow[]): IMediaInfo[] {
     return rows.map(r => r as IMediaInfo);
   }
 
-  mediasToRows(medias: readonly IMediaInfo[]): NewMediaRow[] {
+  public mediasToRows(medias: readonly IMediaInfo[]): NewMediaRow[] {
     return medias.map((m) => this.mediaToRow(m));
   }
 
-  mediaToRow(media: IMediaInfo): NewMediaRow {
+  public mediaToRow(media: IMediaInfo): NewMediaRow {
     const identifier = media.identifier ?? encryptUrlToShortToken(media.url);
 
     return {
@@ -54,12 +54,12 @@ export class DatabaseService implements OnModuleInit {
     };
   }
 
-  async insertMedia(values: NewMediaRow): Promise<MediaRow> {
+  public async insertMedia(values: NewMediaRow): Promise<MediaRow> {
     const [row] = await this.db.insert(medias).values(values).returning();
     return row;
   }
 
-  async insertMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
+  public async insertMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
     if (values.length === 0) {
       return [];
     }
@@ -70,7 +70,7 @@ export class DatabaseService implements OnModuleInit {
    * Bulk insert only new medias (by unique `url`) and ignore duplicates.
    * Single SQL request: `INSERT ... ON CONFLICT (url) DO NOTHING`.
    */
-  async insertNewMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
+  public async insertNewMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
     if (values.length === 0) {
       return [];
     }
@@ -85,7 +85,7 @@ export class DatabaseService implements OnModuleInit {
    * Bulk upsert medias (by unique `url`): insert new rows, update existing rows.
    * Single SQL request: `INSERT ... ON CONFLICT (url) DO UPDATE SET ...`.
    */
-  async upsertMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
+  public async upsertMedias(values: readonly NewMediaRow[]): Promise<MediaRow[]> {
     if (values.length === 0) {
       return [];
     }
@@ -113,22 +113,22 @@ export class DatabaseService implements OnModuleInit {
       .returning();
   }
 
-  async findMediaById(id: string): Promise<MediaRow | undefined> {
+  public async findMediaById(id: string): Promise<MediaRow | undefined> {
     const [row] = await this.db.select().from(medias).where(eq(medias.id, id)).limit(1);
     return row;
   }
 
-  async findMedias(options: { limit?: number; offset?: number } = {}): Promise<MediaRow[]> {
+  public async findMedias(options: { limit?: number; offset?: number } = {}): Promise<MediaRow[]> {
     const { limit = 100, offset = 0 } = options;
     return this.db.select().from(medias).orderBy(desc(medias.id)).limit(limit).offset(offset);
   }
 
-  async countMedias(): Promise<number> {
+  public async countMedias(): Promise<number> {
     const [row] = await this.db.select({ n: count() }).from(medias);
     return Number(row?.n ?? 0);
   }
 
-  async updateMedia(
+  public async updateMedia(
     id: string,
     patch: Omit<Partial<NewMediaRow>, 'id'>,
   ): Promise<MediaRow | undefined> {
@@ -140,12 +140,12 @@ export class DatabaseService implements OnModuleInit {
     return row;
   }
 
-  async deleteMedia(id: string): Promise<boolean> {
+  public async deleteMedia(id: string): Promise<boolean> {
     const [row] = await this.db.delete(medias).where(eq(medias.id, id)).returning({ id: medias.id });
     return row !== undefined;
   }
 
-  async findMediaByIdentifier(identifier: string): Promise<MediaRow | undefined> {
+  public async findMediaByIdentifier(identifier: string): Promise<MediaRow | undefined> {
     const [row] = await this.db
       .select()
       .from(medias)

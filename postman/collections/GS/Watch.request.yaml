@@ -1,6 +1,6 @@
 $kind: http-request
 name: Watch
-url: localhost:3000/media/90IZx1J7zgazxOuHvWTFPRIh9IAFkY6vqRniQnzC0m6ie8GkRj5dOzs6-aQej4N73sxMb66p7lVj7Ky_VElon7r6vBgrjqBfEdkbjsYQP0LNcTPzmWrhdYAOvTsOnvEb6FHKy6ldV4z--PGi-v6O2R81JPnNlasVRCor1EdzaGAk
+url: localhost:3000/media/aHR0cHM6Ly93d3cueG1lZ2Fkcml2ZS5jb20vdmlkZW9zL2dvZGRlc3MtZ3luYXJjaHktY2FyZWxlc3Mtc2lzc3ktbWFpZC1wdW5pc2hlZC13aXRoLWtpdGNoZW4taW1wbGVtZW50cy8
 method: GET
 body:
   type: json
