@@ -1,4 +1,4 @@
-import { customAlphabet } from 'nanoid';
+import * as crypto from 'crypto';
 
 /** `typeof value === 'string'` */
 export function isString(value: unknown): value is string {
@@ -119,13 +119,6 @@ export function parseIntStrict(value: unknown, radix = 10): number | undefined {
   return n;
 }
 
-/** Base62 tokens (8 chars ≈ 218 trillion space before heavy collision risk). */
-const SHORT_TOKEN_LENGTH = 12;
-const mintShortToken = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', SHORT_TOKEN_LENGTH);
-
-const urlByToken = new Map<string, string>();
-const tokenByUrl = new Map<string, string>();
-
 function assertValidHttpUrl(url: string): void {
   try {
     const u = new URL(url);
@@ -137,20 +130,11 @@ function assertValidHttpUrl(url: string): void {
   }
 }
 
-function issueUniqueToken(): string {
-  for (let i = 0; i < 128; i += 1) {
-    const t = mintShortToken();
-    if (!urlByToken.has(t)) {
-      return t;
-    }
-  }
-  throw new Error('Short token mint failed: too many collisions');
-}
-
 /**
- * Registers a URL and returns a short random id (nanoid). Same URL reuses the same id.
- * This is **not** cryptographic encryption: the full URL is kept in an in-memory map.
- * For production, persist `token ↔ url` in Redis/DB instead of this module-level store.
+ * Deterministic reversible token for a URL.
+ * Same input URL => same output token (base64url of the URL string).
+ *
+ * This is intended to make URLs look nicer in routes / identifiers, not for security.
  */
 export function encryptUrlToShortToken(url: string): string {
   const normalized = url.trim();
@@ -158,23 +142,23 @@ export function encryptUrlToShortToken(url: string): string {
     throw new TypeError('URL must be a non-empty string');
   }
   assertValidHttpUrl(normalized);
-
-  const existing = tokenByUrl.get(normalized);
-  if (existing !== undefined) {
-    return existing;
-  }
-
-  const token = issueUniqueToken();
-  urlByToken.set(token, normalized);
-  tokenByUrl.set(normalized, token);
-  return token;
+  return Buffer.from(normalized, 'utf8').toString('base64url');
 }
 
-/** Resolves a token from {@link encryptUrlToShortToken} back to the URL, or `undefined` if unknown. */
+/**
+ * Decodes a token produced by {@link encryptUrlToShortToken}.
+ * Returns `undefined` for blank/invalid tokens.
+ */
 export function decryptShortTokenToUrl(token: string): string | undefined {
   const t = token.trim();
   if (t === '') {
     return undefined;
   }
-  return urlByToken.get(t);
+  try {
+    const decoded = Buffer.from(t, 'base64url').toString('utf8');
+    assertValidHttpUrl(decoded);
+    return decoded;
+  } catch {
+    return undefined;
+  }
 }

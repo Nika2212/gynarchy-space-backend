@@ -22,6 +22,10 @@ describe('XMDCentre (integration)', () => {
       throw new Error('XMD env variable is required — add it to .env at the project root');
     }
 
+    if (!process.env.CRYPTA) {
+      process.env.CRYPTA = 'integration-test-url-token-secret-key';
+    }
+
     mockConfig.set('XMD', xmdUrl);
     centre = new XMDCentre(createConfigServiceMock());
   });
@@ -97,7 +101,7 @@ describe('XMDCentre (integration)', () => {
   });
 
   /**
-   * Live `getUrl` needs a watch URL the origin serves. Search currently returns `/watch/{token}` tokens;
+   * Live `getUrl` needs a watch URL the origin serves. Search currently returns `/media/{token}` tokens;
    * resolving those over HTTP may 404 until the server maps tokens → real routes. Validation-only tests stay on.
    */
   describe('getUrl()', () => {

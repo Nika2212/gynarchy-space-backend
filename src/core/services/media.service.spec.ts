@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PER_PAGE_SIZE, XMDCentre } from '../../centres/XMD.centre';
 import type { IMediaInfo } from '../../interfaces/media-info.interface';
+import { DatabaseService } from '../../database/database.service';
 import { MediaService } from './media.service';
 
 function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
@@ -19,15 +20,25 @@ function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
 describe('MediaService', () => {
   let service: MediaService;
   let search: jest.Mock;
+  let upsertMedias: jest.Mock;
 
   beforeEach(async () => {
     search = jest.fn();
+    upsertMedias = jest.fn(async (rows) => rows);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MediaService,
         {
           provide: XMDCentre,
           useValue: { search },
+        },
+        {
+          provide: DatabaseService,
+          useValue: {
+            upsertMedias,
+            mediasToRows: (m: any) => m,
+            rowsToMedias: (rows: any) => rows,
+          },
         },
       ],
     }).compile();

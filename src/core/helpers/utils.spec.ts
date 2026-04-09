@@ -278,7 +278,7 @@ describe('parseIntStrict', () => {
   });
 });
 
-describe('encryptUrlToShortToken / decryptShortTokenToUrl', () => {
+describe('encryptUrlToShortToken / decryptShortTokenToUrl (base64url)', () => {
   const uniqueUrl = (n: number) => `https://example.com/t/${Date.now()}-${n}-${Math.random()}`;
 
   it('throws TypeError for empty or whitespace-only input', () => {
@@ -292,55 +292,34 @@ describe('encryptUrlToShortToken / decryptShortTokenToUrl', () => {
     expect(() => encryptUrlToShortToken('not a url')).toThrow(TypeError);
   });
 
-  it('returns a token and decryptShortTokenToUrl resolves it', () => {
-    const url = uniqueUrl(1);
+  it('is deterministic for the same URL', () => {
+    const url = uniqueUrl(2);
+    const a = encryptUrlToShortToken(url);
+    const b = encryptUrlToShortToken(url);
+    expect(a).toBe(b);
+  });
+
+  it('round-trips URL via token (no dictionary)', () => {
+    const url = uniqueUrl(10);
     const token = encryptUrlToShortToken(url);
     expect(typeof token).toBe('string');
-    expect(token.length).toBe(12);
+    expect(token.length).toBeGreaterThan(0);
     expect(decryptShortTokenToUrl(token)).toBe(url);
   });
 
-  it('reuses the same token for the same URL', () => {
-    const url = uniqueUrl(2);
-    expect(encryptUrlToShortToken(url)).toBe(encryptUrlToShortToken(url));
-  });
-
-  it('decryptShortTokenToUrl returns undefined for unknown or blank token', () => {
-    expect(decryptShortTokenToUrl('')).toBeUndefined();
-    expect(decryptShortTokenToUrl('   ')).toBeUndefined();
-    expect(decryptShortTokenToUrl('noSuchToken12345678901')).toBeUndefined();
-  });
-
-  it('trims URL before storing', () => {
+  it('trims URL before encrypt', () => {
     const url = uniqueUrl(3);
     const spaced = `  ${url}  `;
     const token = encryptUrlToShortToken(spaced);
+    expect(token).toBe(encryptUrlToShortToken(url.trim()));
     expect(decryptShortTokenToUrl(token)).toBe(url.trim());
   });
 
-  it('decryptShortTokenToUrl trims token', () => {
-    const url = uniqueUrl(4);
-    const token = encryptUrlToShortToken(url);
-    expect(decryptShortTokenToUrl(`  ${token}  `)).toBe(url);
-  });
-});
-
-describe('issueUniqueToken collision exhaustion', () => {
-  it('throws when mint always returns an existing token', () => {
-    jest.resetModules();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const nanoid = require('nanoid') as typeof import('nanoid');
-    const spy = jest.spyOn(nanoid, 'customAlphabet').mockReturnValue(() => 'fixedCollisionToken');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const utils = require('./utils') as typeof import('./utils');
-
-    const u1 = `https://collision.test/${Date.now()}-a`;
-    const u2 = `https://collision.test/${Date.now()}-b`;
-
-    utils.encryptUrlToShortToken(u1);
-    expect(() => utils.encryptUrlToShortToken(u2)).toThrow('Short token mint failed: too many collisions');
-
-    spy.mockRestore();
-    jest.resetModules();
+  it('decryptShortTokenToUrl returns undefined for blank, garbage, or non-url token', () => {
+    expect(decryptShortTokenToUrl('')).toBeUndefined();
+    expect(decryptShortTokenToUrl('   ')).toBeUndefined();
+    expect(decryptShortTokenToUrl('not-valid-base64url!!!')).toBeUndefined();
+    // decodes, but not a valid http(s) URL
+    expect(decryptShortTokenToUrl(Buffer.from('nope', 'utf8').toString('base64url'))).toBeUndefined();
   });
 });

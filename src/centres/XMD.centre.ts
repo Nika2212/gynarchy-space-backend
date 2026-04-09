@@ -1,6 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { promises as fs } from 'fs';
@@ -33,11 +38,34 @@ class MediaExtractionException extends XMDCentreException {
   }
 }
 
+/** Copy flashvars off the JSDOM window before `window.close()` so no realm references are retained. */
+function detachFlashvars(vars: object): Record<string, unknown> {
+  try {
+    return JSON.parse(JSON.stringify(vars)) as Record<string, unknown>;
+  } catch {
+    return Object.fromEntries(
+      Object.entries(vars as Record<string, unknown>).filter(
+        ([, v]) =>
+          v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
+      ),
+    );
+  }
+}
+
+function isInitAbortedError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  return error.code === 'ERR_CANCELED' || error.message === 'canceled';
+}
+
 @Injectable()
-export class XMDCentre {
+export class XMDCentre implements OnModuleDestroy {
   private readonly base: string;
   private readonly http: AxiosInstance;
+  private readonly initAbort = new AbortController();
   private ktPlayerCache: string | null = null;
+  private urlCache: Map<string, string> = new Map<string, string>();
 
   constructor(private readonly configService: ConfigService) {
     this.base = this.configService.get<string>('XMD') as string;
@@ -55,12 +83,19 @@ export class XMDCentre {
     });
 
     void this.onInit().catch((error) => {
+      if (isInitAbortedError(error)) {
+        return;
+      }
       Console.error({
         context: 'XMDCentre.constructor',
         message: 'Initialization failed',
-        error: error?.message,
+        error: (error as Error)?.message,
       });
     });
+  }
+
+  onModuleDestroy(): void {
+    this.initAbort.abort();
   }
 
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
@@ -86,21 +121,39 @@ export class XMDCentre {
   }
 
   public async getUrl(url: string): Promise<string> {
+    if (this.urlCache.has(url)) {
+      return this.urlCache.get(url) as string;
+    }
+
     this.validateUrlInput(url);
 
     try {
       const { data } = await this.http.get(url);
-      return await this.extractMediaUrl(data);
+      const extractedURL = await this.extractMediaUrl(data);
+
+      if (this.urlCache.size >= 128) {
+        this.urlCache.clear();
+      }
+
+      if (!this.urlCache.has(extractedURL)) {
+        this.urlCache.set(url, extractedURL);
+      }
+
+      return extractedURL;
     } catch (error) {
+      this.urlCache.clear();
       this.handleAxiosError(error, 'getUrl()', { url });
     }
   }
 
   private async onInit(): Promise<void> {
     try {
-      await this.http.head('/');
+      await this.http.head('/', { signal: this.initAbort.signal });
       Console.success('XMDCentre initialized successfully');
     } catch (error) {
+      if (isInitAbortedError(error)) {
+        return;
+      }
       const err = error as Error;
       Console.error({
         context: 'XMDCentre.onInit',
@@ -125,12 +178,15 @@ export class XMDCentre {
         return;
       }
 
+      const identifier = encryptUrlToShortToken(url);
+
       results.push({
         title: node.find('strong.title').text().trim(),
         duration: timeToMs(node.find('.duration').text().trim()),
         postedAt: node.find('.added').text().trim(),
-        thumbnailSrc: this.expandScreenshots(thumb).map(url => `/images/${encryptUrlToShortToken(url)}`),
-        url: `/watch/${encryptUrlToShortToken(url)}`,
+        thumbnailSrc: this.expandScreenshots(thumb).map((url) => `/images/${encryptUrlToShortToken(url)}`),
+        identifier,
+        url: `/media/${identifier}`,
         description: '',
       });
     });
@@ -165,7 +221,7 @@ export class XMDCentre {
         throw new MediaExtractionException('flashvars not found');
       }
 
-      return vars as Record<string, unknown>;
+      return detachFlashvars(vars);
     } finally {
       if (dom) {
         dom.window.close();
@@ -196,6 +252,15 @@ export class XMDCentre {
       let timeout: NodeJS.Timeout | null = null;
       let resolveTimeout: NodeJS.Timeout | null = null;
       let dom: JSDOM | null = null;
+      const rafTimerById = new Map<number, ReturnType<typeof setTimeout>>();
+      let nextRafId = 1;
+
+      const clearAllRafTimers = (): void => {
+        for (const t of rafTimerById.values()) {
+          clearTimeout(t);
+        }
+        rafTimerById.clear();
+      };
 
       const cleanup = () => {
         if (timeout) {
@@ -206,11 +271,11 @@ export class XMDCentre {
           clearTimeout(resolveTimeout);
           resolveTimeout = null;
         }
+        clearAllRafTimers();
         if (dom) {
           try {
             dom.window.close();
-          } catch (err) {
-          }
+          } catch (err) {}
           dom = null;
         }
       };
@@ -227,7 +292,26 @@ export class XMDCentre {
         });
 
         const { window } = dom;
-        window.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+        window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+          const id = nextRafId++;
+          const handle = setTimeout(() => {
+            rafTimerById.delete(id);
+            try {
+              cb(Date.now());
+            } catch {
+              /* script errors surface via kt_player path */
+            }
+          }, 0);
+          rafTimerById.set(id, handle);
+          return id;
+        };
+        window.cancelAnimationFrame = (id: number): void => {
+          const handle = rafTimerById.get(id);
+          if (handle !== undefined) {
+            clearTimeout(handle);
+            rafTimerById.delete(id);
+          }
+        };
 
         const script = window.document.createElement('script');
         script.textContent = scriptContent;
@@ -273,9 +357,7 @@ export class XMDCentre {
 
   private validateSearchInput(keyword: string, page: number): void {
     if (typeof keyword !== 'string' || keyword.trim().length < MIN_SEARCH_KEYWORD_LENGTH) {
-      throw new BadRequestException(
-        `Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`,
-      );
+      throw new BadRequestException(`Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`);
     }
 
     if (keyword.length > MAX_SEARCH_KEYWORD_LENGTH) {
@@ -283,9 +365,7 @@ export class XMDCentre {
     }
 
     if (!Number.isInteger(page) || page < MIN_PAGE_NUMBER || page > MAX_PAGE_NUMBER) {
-      throw new BadRequestException(
-        `Invalid page: must be an integer between ${MIN_PAGE_NUMBER} and ${MAX_PAGE_NUMBER}`,
-      );
+      throw new BadRequestException(`Invalid page: must be an integer between ${MIN_PAGE_NUMBER} and ${MAX_PAGE_NUMBER}`);
     }
   }
 

@@ -2,11 +2,10 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { CryptaService } from './core/services/crypta.service';
-import { StorageService } from './core/services/storage.service';
-import { DBService } from './core/services/db.service';
 import { MediaController } from './core/controllers/media.controller';
 import { MediaService } from './core/services/media.service';
 import { XMDCentre } from './centres/XMD.centre';
+import { DatabaseModule } from './database.module';
 
 @Module({
   imports: [
@@ -17,6 +16,7 @@ import { XMDCentre } from './centres/XMD.centre';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    DatabaseModule,
   ],
   controllers: [
     MediaController,
@@ -26,7 +26,6 @@ import { XMDCentre } from './centres/XMD.centre';
     MediaService,
     CryptaService,
     // StorageService,
-    // DBService,
   ],
 })
 export class AppModule {

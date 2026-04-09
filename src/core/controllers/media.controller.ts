@@ -28,8 +28,9 @@ export class MediaController {
   @Get(':id')
   public async findOne(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
+    const range = req.headers.range as string;
 
-    res.status(200).json({ message: `This action returns media #${id}` });
+    return await this.mediaService.find(id as string, range, res);
   }
 
   @Get(':id/download')
