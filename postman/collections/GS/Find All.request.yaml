@@ -1,6 +1,6 @@
 $kind: http-request
 name: Find All
-url: localhost:3000/media/?keyword=gynarchy&page=1
+url: localhost:3000/api/media/?keyword=gynarchy&page=1
 method: GET
 queryParams:
   keyword: gynarchy

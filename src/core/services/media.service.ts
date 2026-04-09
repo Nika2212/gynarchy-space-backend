@@ -62,6 +62,7 @@ export class MediaService {
         response.status(HttpStatus.BAD_GATEWAY).send('Error fetching remote stream');
       }
     };
+    const getFromStorage = async (): Promise<void> => {};
     const media = await this.databaseService.findMediaByIdentifier(id);
 
     if (media && media.isDownloaded) {
