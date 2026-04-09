@@ -5,4 +5,8 @@ method: GET
 body:
   type: json
   content: ""
-order: 1496
+auth:
+  type: bearer
+  credentials:
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJvd25lciIsImlhdCI6MTc3NTcyMjU2OCwiZXhwIjoxNzc2MzI3MzY4fQ.Gzj_HPW1P4wyEPz25196kSjgtl8DOo6F8K8-UHJ0EVE
+order: 1000
