@@ -12,6 +12,7 @@ import { MediaDocument, MediaSchema } from './media.schema';
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGODB_URI'),
         dbName: 'gynarchy',
+        serverSelectionTimeoutMS: 10_000,
       }),
     }),
     MongooseModule.forFeature([{ name: MediaDocument.name, schema: MediaSchema }]),

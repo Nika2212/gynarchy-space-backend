@@ -13,8 +13,8 @@ async function bootstrap() {
   configureApp(app);
 
   const config = app.get(ConfigService);
-  const port = Number(config.get<string>('PORT')) || 3000;
-  await app.listen(port);
+  const port = Number(process.env.PORT) || Number(config.get<string>('PORT')) || 3000;
+  await app.listen(port, '0.0.0.0');
   logger.log(`Listening on ${await app.getUrl()}`);
 }
 void bootstrap();
