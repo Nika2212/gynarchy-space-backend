@@ -4,11 +4,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MediaController } from './core/controllers/media.controller';
 import { MediaService } from './core/services/media.service';
 import { XMDCentre } from './centres/XMD.centre';
-import { DatabaseModule } from './database.module';
 import { SecurityGuard, SecurityService } from './core/services/security.service';
 import { JwtModule } from '@nestjs/jwt';
 import { SecurityController } from './core/controllers/security.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { resolveEnvFilePath } from './config/env';
 
 @Module({
   imports: [
@@ -18,6 +18,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
+      cache: true,
+      envFilePath: resolveEnvFilePath(),
     }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -32,7 +34,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
       ttl: 30000,
       blockDuration: 30000
     }]),
-    DatabaseModule,
   ],
   controllers: [MediaController, SecurityController],
   providers: [SecurityService, SecurityGuard, XMDCentre, MediaService],

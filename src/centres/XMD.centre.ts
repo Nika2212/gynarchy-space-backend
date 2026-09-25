@@ -38,7 +38,6 @@ class MediaExtractionException extends XMDCentreException {
   }
 }
 
-/** Copy flashvars off the JSDOM window before `window.close()` so no realm references are retained. */
 function detachFlashvars(vars: object): Record<string, unknown> {
   try {
     return JSON.parse(JSON.stringify(vars)) as Record<string, unknown>;
@@ -63,7 +62,7 @@ function isInitAbortedError(error: unknown): boolean {
 export class XMDCentre implements OnModuleDestroy {
   private readonly base: string;
   private readonly http: AxiosInstance;
-  private readonly initAbort = new AbortController();
+  private readonly initAbort: AbortController = new AbortController();
   private ktPlayerCache: string | null = null;
   private urlCache: Map<string, string> = new Map<string, string>();
 
