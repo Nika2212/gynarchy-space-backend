@@ -5,7 +5,7 @@ import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 
 // Starts the Nest app and listens on PORT for every network interface.
-async function bootstrap() {
+export async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
@@ -18,4 +18,16 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
   logger.log(`Listening on ${await app.getUrl()}`);
 }
-void bootstrap();
+// True when this file is the process entrypoint, not a Jest import.
+export function isDirectStart(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.JEST_WORKER_ID === undefined;
+}
+
+// Starts the process only when this file is the entrypoint.
+export function startIfDirect(env: NodeJS.ProcessEnv = process.env, start = bootstrap): void {
+  if (isDirectStart(env)) {
+    void start();
+  }
+}
+
+startIfDirect();

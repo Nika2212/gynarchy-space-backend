@@ -2,7 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
-import { parseCorsOrigins, resolveTrustProxy } from './config/http';
+import { parseCorsOrigins, resolveTrustProxy } from './shared/config/http';
 
 // Applies CORS, helmet, body limits, global prefix, and validation to the app.
 export function configureApp(app: INestApplication): void {
