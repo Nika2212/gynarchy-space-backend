@@ -1,19 +1,24 @@
 import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { IFindAll } from '../../interfaces/query.interface';
-import { IMediaContainer } from '../../interfaces/media-container.interface';
-import { MediaService } from '../services/media.service';
-import { isNumberedString } from '../helpers/utils';
-import { SecurityGuard } from '../services/security.service';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { isNumberedString } from '../common/type-guards';
+import { IMediaContainer } from '../interfaces/media-container.interface';
+import { IFindAll } from '../interfaces/query.interface';
+import { SecurityGuard } from '../security/security.guard';
+import { MediaStreamService } from './media-stream.service';
+import { MediaService } from './media.service';
 
 @UseGuards(ThrottlerGuard, SecurityGuard)
 @Throttle({ default: { limit: 120, ttl: 60000 } })
 @Controller('media')
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(
+    private readonly mediaService: MediaService,
+    private readonly mediaStreamService: MediaStreamService,
+  ) {}
 
   @Get()
+  // Returns a search page of media items and paging meta.
   public async findAll(@Req() req: Request, @Res() res: Response): Promise<void> {
     const query: IFindAll = req.query as unknown as IFindAll;
     query.page = isNumberedString(query.page) ? +query.page : 1;
@@ -24,14 +29,16 @@ export class MediaController {
 
   @Get(':id')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
+  // Streams the video for one media id.
   public async findOne(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
     const range = req.headers.range as string;
 
-    return await this.mediaService.find(id as string, range, res);
+    return this.mediaStreamService.stream(id as string, range, res);
   }
 
   @Get(':id/download')
+  // Placeholder download endpoint until file export is implemented.
   public async download(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
 
@@ -39,18 +46,21 @@ export class MediaController {
   }
 
   @Get(':id/favorite')
+  // Toggles the favorite flag for one media item.
   public async favorite(@Req() req: Request, @Res() res: Response): Promise<void> {
     const payload = await this.mediaService.toggleFavorite(req.params.id as string);
     res.status(200).json(payload);
   }
 
   @Get(':id/like')
+  // Toggles the liked flag for one media item.
   public async like(@Req() req: Request, @Res() res: Response): Promise<void> {
     const payload = await this.mediaService.toggleLike(req.params.id as string);
     res.status(200).json(payload);
   }
 
   @Get(':id/hide')
+  // Toggles the hidden flag for one media item.
   public async hide(@Req() req: Request, @Res() res: Response): Promise<void> {
     const payload = await this.mediaService.toggleHidden(req.params.id as string);
     res.status(200).json(payload);

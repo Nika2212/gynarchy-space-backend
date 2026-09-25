@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { encryptText, hashIdentifier, tryDecryptText } from '../common/field-crypto';
+import { decryptShortTokenToURL } from '../common/url-token';
 import type { IMediaInfo } from '../interfaces/media-info.interface';
-import { encryptText, hashIdentifier, tryDecryptText } from '../core/helpers/field-crypto';
-import { decryptShortTokenToUrl } from '../core/helpers/utils';
 import { MediaDocument } from './media.schema';
 
 export type MediaFlags = Pick<
@@ -28,12 +28,13 @@ const FLAG_DEFAULTS = {
 } as const;
 
 @Injectable()
-export class DatabaseService {
+export class MediaRepository {
   constructor(
     @InjectModel(MediaDocument.name) private readonly mediaModel: Model<MediaDocument>,
     private readonly configService: ConfigService,
   ) {}
 
+  // Loads like, favorite, hidden, and watch flags for the given identifiers.
   public async findByIdentifiers(identifiers: readonly string[]): Promise<MediaFlags[]> {
     if (identifiers.length === 0) {
       return [];
@@ -51,6 +52,7 @@ export class DatabaseService {
       .filter((row): row is MediaFlags => row !== undefined);
   }
 
+  // Saves or refreshes catalog fields from a search, without overwriting user flags.
   public async upsertFromSearch(medias: readonly IMediaInfo[]): Promise<void> {
     const secret = this.secret();
     const ops = medias
@@ -79,18 +81,22 @@ export class DatabaseService {
     await this.mediaModel.bulkWrite(ops, { ordered: false });
   }
 
+  // Flips the liked flag for one media item.
   public async toggleLike(identifier: string): Promise<MediaFlags> {
     return this.toggleFlag(identifier, 'isLiked');
   }
 
+  // Flips the favorite flag for one media item.
   public async toggleFavorite(identifier: string): Promise<MediaFlags> {
     return this.toggleFlag(identifier, 'isFavorite');
   }
 
+  // Flips the hidden flag for one media item.
   public async toggleHidden(identifier: string): Promise<MediaFlags> {
     return this.toggleFlag(identifier, 'isHidden');
   }
 
+  // Creates the media row if needed, then flips the named boolean flag.
   private async toggleFlag(
     identifier: string,
     flag: 'isLiked' | 'isFavorite' | 'isHidden',
@@ -105,7 +111,7 @@ export class DatabaseService {
         ...this.encryptCatalog(
           {
             identifier,
-            url: decryptShortTokenToUrl(identifier) ?? `/media/${identifier}`,
+            url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
             title: '',
             description: '',
             thumbnailSrc: [],
@@ -126,6 +132,7 @@ export class DatabaseService {
     return this.toFlags(existing, secret)!;
   }
 
+  // Encrypts catalog text and URL fields before they are stored.
   private encryptCatalog(
     media: Pick<IMediaInfo, 'identifier' | 'url' | 'title' | 'description' | 'thumbnailSrc' | 'postedAt' | 'duration'>,
     secret: string,
@@ -142,6 +149,7 @@ export class DatabaseService {
     };
   }
 
+  // Decrypts the identifier and maps the row to public flag fields.
   private toFlags(row: MediaDocument, secret: string): MediaFlags | undefined {
     const identifier = tryDecryptText(row.identifier, secret);
     if (!identifier) {
@@ -159,6 +167,7 @@ export class DatabaseService {
     };
   }
 
+  // Returns the JWT secret used as the field-encryption key.
   private secret(): string {
     return this.configService.getOrThrow<string>('JWT_SECRET');
   }

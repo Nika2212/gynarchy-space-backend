@@ -74,12 +74,12 @@ describe('XMDCentre (integration)', () => {
   const searchKeyword = 'gynarchy';
 
   beforeAll(() => {
-    const xmdUrl = process.env.XMD;
-    if (!xmdUrl) {
+    const xmdURL = process.env.XMD;
+    if (!xmdURL) {
       throw new Error('XMD env variable is required — add it to .env at the project root');
     }
 
-    mockConfig.set('XMD', xmdUrl);
+    mockConfig.set('XMD', xmdURL);
     centre = new XMDCentre(createConfigServiceMock());
   });
 
@@ -153,13 +153,13 @@ describe('XMDCentre (integration)', () => {
     );
   });
 
-  describe('getUrl()', () => {
+  describe('getURL()', () => {
     it('should reject empty URL with 400 Bad Request', async () => {
-      await expect(centre.getUrl('')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.getURL('')).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('should reject invalid URL format with 400 Bad Request', async () => {
-      await expect(centre.getUrl('not-a-url')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(centre.getURL('not-a-url')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

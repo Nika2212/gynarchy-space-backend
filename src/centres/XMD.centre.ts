@@ -15,9 +15,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 import { IMediaInfo } from '../interfaces/media-info.interface';
-import { timeToMs } from '../core/helpers/time';
-import { assertValidHttpUrl, encryptUrlToShortToken } from '../core/helpers/utils';
-import { isSameSiteHost } from '../core/helpers/image-proxy';
+import { timeToMS } from '../common/time';
+import { assertValidHTTPURL, encryptURLToShortToken } from '../common/url-token';
+import { isSameSiteHost } from '../common/image-type';
 
 export const PER_PAGE_SIZE: number = 24;
 
@@ -37,17 +37,20 @@ const MIN_PAGE_NUMBER: number = 1;
 const MAX_PAGE_NUMBER: number = 1000;
 
 class XMDCentreException extends InternalServerErrorException {
+  // Builds an XMD error with an optional debug payload.
   constructor(message: string, meta?: Record<string, any>) {
     super({ message, meta });
   }
 }
 
 class MediaExtractionException extends XMDCentreException {
+  // Builds an error when the video URL cannot be extracted from a page.
   constructor(reason: string) {
     super(`Media extraction failed: ${reason}`);
   }
 }
 
+// True when the startup HEAD request was canceled on shutdown.
 function isInitAbortedError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) {
     return false;
@@ -62,10 +65,11 @@ export class XMDCentre implements OnModuleDestroy {
   private readonly http: AxiosInstance;
   private readonly initAbort: AbortController = new AbortController();
   private ktPlayerCache: string | null = null;
-  private urlCache: Map<string, string> = new Map<string, string>();
+  private URLCache: Map<string, string> = new Map<string, string>();
   private jsdomInFlight = 0;
   private readonly jsdomQueue: Array<() => void> = [];
 
+  // Reads the XMD base URL, builds the HTTP client, and starts a health check.
   constructor(private readonly configService: ConfigService) {
     this.base = (this.configService.get<string>('XMD') ?? '').trim();
 
@@ -74,7 +78,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
 
     try {
-      assertValidHttpUrl(this.base);
+      assertValidHTTPURL(this.base);
     } catch {
       throw new XMDCentreException('XMD base URL is not configured');
     }
@@ -98,11 +102,13 @@ export class XMDCentre implements OnModuleDestroy {
     });
   }
 
+  // Cancels the in-flight init request when the module shuts down.
   public onModuleDestroy(): void {
     this.initAbort.abort();
   }
 
-  public isAllowedAssetUrl(url: string): boolean {
+  // True when the URL is http(s) and lives on the same site as the XMD base.
+  public isAllowedAssetURL(url: string): boolean {
     try {
       const target = new URL(url);
       if (target.protocol !== 'http:' && target.protocol !== 'https:') {
@@ -114,6 +120,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
+  // Fetches one XMD search page and returns parsed media cards.
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
     const normalizedKeyword = typeof keyword === 'string' ? keyword.trim() : keyword;
     this.validateSearchInput(normalizedKeyword, page);
@@ -140,35 +147,37 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
-  public async getUrl(url: string): Promise<string> {
-    if (this.urlCache.has(url)) {
-      return this.urlCache.get(url) as string;
+  // Resolves a page URL to the playable video URL, using a small cache.
+  public async getURL(url: string): Promise<string> {
+    if (this.URLCache.has(url)) {
+      return this.URLCache.get(url) as string;
     }
 
-    this.validateUrlInput(url);
+    this.validateURLInput(url);
 
     try {
       const { data } = await this.http.get(url);
-      const extractedURL = await this.extractMediaUrl(data);
+      const extractedURL = await this.extractMediaURL(data);
 
-      if (this.urlCache.size >= URL_CACHE_LIMIT) {
-        const oldest = this.urlCache.keys().next().value;
+      if (this.URLCache.size >= URL_CACHE_LIMIT) {
+        const oldest = this.URLCache.keys().next().value;
         if (oldest !== undefined) {
-          this.urlCache.delete(oldest);
+          this.URLCache.delete(oldest);
         }
       }
 
-      this.urlCache.set(url, extractedURL);
+      this.URLCache.set(url, extractedURL);
       return extractedURL;
     } catch (error) {
-      this.urlCache.delete(url);
+      this.URLCache.delete(url);
       if (error instanceof HttpException) {
         throw error;
       }
-      this.handleAxiosError(error, 'getUrl()', { url });
+      this.handleAxiosError(error, 'getURL()', { url });
     }
   }
 
+  // Pings the XMD home page so a bad base URL is logged at startup.
   private async onInit(): Promise<void> {
     try {
       await this.http.head('/', { signal: this.initAbort.signal });
@@ -185,6 +194,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
+  // Reads search-result cards from HTML into media info objects.
   private parseSearch(html: string): IMediaInfo[] {
     const $ = cheerio.load(html);
     const results: IMediaInfo[] = [];
@@ -198,26 +208,26 @@ export class XMDCentre implements OnModuleDestroy {
           .attr('data-original')
           ?.replace('videos_screenshots', 'videos_sources')
           ?.replace('320x180', 'screenshots');
-        const thumb = rawThumb ? this.toAbsoluteHttpUrl(rawThumb) : undefined;
+        const thumb = rawThumb ? this.toAbsoluteHTTPURL(rawThumb) : undefined;
         if (!thumb) {
           return;
         }
 
         const href = node.find('a').attr('href');
-        const url = href ? this.toAbsoluteHttpUrl(href) : undefined;
+        const url = href ? this.toAbsoluteHTTPURL(href) : undefined;
         if (!url) {
           return;
         }
 
-        const identifier = encryptUrlToShortToken(url);
+        const identifier = encryptURLToShortToken(url);
 
         results.push({
           title: node.find('strong.title').text().trim(),
-          duration: timeToMs(node.find('.duration').text().trim()),
+          duration: timeToMS(node.find('.duration').text().trim()),
           postedAt: node.find('.added').text().trim(),
           thumbnailSrc: this.expandScreenshots(thumb).map((shot) => {
-            const absolute = this.toAbsoluteHttpUrl(shot) ?? shot;
-            return `/images/${encryptUrlToShortToken(absolute)}`;
+            const absolute = this.toAbsoluteHTTPURL(shot) ?? shot;
+            return `/images/${encryptURLToShortToken(absolute)}`;
           }),
           identifier,
           url: `/media/${identifier}`,
@@ -231,27 +241,31 @@ export class XMDCentre implements OnModuleDestroy {
     return results;
   }
 
-  private toAbsoluteHttpUrl(url: string): string | undefined {
+  // Turns a relative or absolute path into an absolute http(s) URL.
+  private toAbsoluteHTTPURL(url: string): string | undefined {
     try {
       const absolute = new URL(url, this.base).href;
-      assertValidHttpUrl(absolute);
+      assertValidHTTPURL(absolute);
       return absolute;
     } catch {
       return undefined;
     }
   }
 
+  // Builds the six sequential screenshot URLs from one thumbnail path.
   private expandScreenshots(url: string): string[] {
     return Array.from({ length: 6 }, (_, i) => url.replace(/\/\d+\.jpg$/, `/${i + 1}.jpg`));
   }
 
-  private async extractMediaUrl(html: string): Promise<string> {
+  // Runs kt_player against page flashvars and returns the video URL.
+  private async extractMediaURL(html: string): Promise<string> {
     const flashvars = this.extractFlashVars(html);
     const ktPlayerScript = await this.loadKtPlayer();
 
     return this.withJsdomSlot(() => this.runKtPlayer(flashvars, ktPlayerScript));
   }
 
+  // Runs work inside a limited JSDOM slot so too many players do not pile up.
   private async withJsdomSlot<T>(run: () => Promise<T>): Promise<T> {
     await this.acquireJsdomSlot();
     try {
@@ -261,6 +275,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
+  // Waits for a free JSDOM slot, or rejects when the queue is full.
   private acquireJsdomSlot(): Promise<void> {
     if (this.jsdomInFlight < JSDOM_CONCURRENCY) {
       this.jsdomInFlight += 1;
@@ -279,6 +294,7 @@ export class XMDCentre implements OnModuleDestroy {
     });
   }
 
+  // Frees one JSDOM slot and starts the next waiting job.
   private releaseJsdomSlot(): void {
     this.jsdomInFlight = Math.max(0, this.jsdomInFlight - 1);
     const next = this.jsdomQueue.shift();
@@ -287,6 +303,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
+  // Parses flashvars from the page, or throws if they are missing.
   private extractFlashVars(html: string): Record<string, unknown> {
     try {
       return parseFlashvarsFromHtml(html);
@@ -295,6 +312,7 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
+  // Loads and caches the kt_player.js source from disk.
   private async loadKtPlayer(): Promise<string> {
     if (this.ktPlayerCache !== null) {
       return this.ktPlayerCache;
@@ -318,21 +336,24 @@ export class XMDCentre implements OnModuleDestroy {
     throw new MediaExtractionException(`Failed to load kt_player.js: ${lastError?.message ?? 'unknown error'}`);
   }
 
+  // Executes kt_player in JSDOM and reads the resolved video URL.
   private runKtPlayer(flashvars: Record<string, unknown>, scriptContent: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let timeout: NodeJS.Timeout | null = null;
       let resolveTimeout: NodeJS.Timeout | null = null;
       let dom: JSDOM | null = null;
-      const rafTimerById = new Map<number, ReturnType<typeof setTimeout>>();
-      let nextRafId = 1;
+      const rafTimerByID = new Map<number, ReturnType<typeof setTimeout>>();
+      let nextRafID = 1;
 
+      // Clears every fake requestAnimationFrame timer created for kt_player.
       const clearAllRafTimers = (): void => {
-        for (const t of rafTimerById.values()) {
+        for (const t of rafTimerByID.values()) {
           clearTimeout(t);
         }
-        rafTimerById.clear();
+        rafTimerByID.clear();
       };
 
+      // Stops timers and closes the JSDOM window after extract succeeds or fails.
       const cleanup = () => {
         if (timeout) {
           clearTimeout(timeout);
@@ -363,24 +384,26 @@ export class XMDCentre implements OnModuleDestroy {
         });
 
         const { window } = dom;
+        // Stands in for requestAnimationFrame so kt_player can run in Node.
         window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
-          const id = nextRafId++;
+          const id = nextRafID++;
           const handle = setTimeout(() => {
-            rafTimerById.delete(id);
+            rafTimerByID.delete(id);
             try {
               cb(Date.now());
             } catch {
               /* script errors surface via kt_player path */
             }
           }, 0);
-          rafTimerById.set(id, handle);
+          rafTimerByID.set(id, handle);
           return id;
         };
+        // Cancels one fake animation-frame timer by id.
         window.cancelAnimationFrame = (id: number): void => {
-          const handle = rafTimerById.get(id);
+          const handle = rafTimerByID.get(id);
           if (handle !== undefined) {
             clearTimeout(handle);
-            rafTimerById.delete(id);
+            rafTimerByID.delete(id);
           }
         };
 
@@ -393,14 +416,14 @@ export class XMDCentre implements OnModuleDestroy {
         resolveTimeout = setTimeout(() => {
           try {
             const conf = (window as unknown as { kvsplayer?: { kt_player?: { conf?: { video_alt_url?: string; video_url?: string } } } })?.kvsplayer?.kt_player?.conf;
-            const videoUrl = conf?.video_alt_url ?? conf?.video_url;
+            const videoURL = conf?.video_alt_url ?? conf?.video_url;
 
-            if (!videoUrl || typeof videoUrl !== 'string') {
+            if (!videoURL || typeof videoURL !== 'string') {
               throw new MediaExtractionException('video URL not resolved');
             }
 
             cleanup();
-            resolve(videoUrl);
+            resolve(videoURL);
           } catch (err) {
             cleanup();
             reject(err);
@@ -413,6 +436,7 @@ export class XMDCentre implements OnModuleDestroy {
     });
   }
 
+  // Logs an HTTP failure and throws a centre error for the caller.
   private handleAxiosError(error: unknown, context: string, meta?: Record<string, unknown>): never {
     const axiosError = error as AxiosError;
     this.logger.error(
@@ -426,6 +450,7 @@ export class XMDCentre implements OnModuleDestroy {
     throw new XMDCentreException(`XMDCentre error in ${context}`, meta);
   }
 
+  // Rejects empty, too-long, or out-of-range search keyword and page values.
   private validateSearchInput(keyword: string, page: number): void {
     if (typeof keyword !== 'string' || keyword.trim().length < MIN_SEARCH_KEYWORD_LENGTH) {
       throw new BadRequestException(`Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`);
@@ -440,7 +465,8 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
-  private validateUrlInput(url: string): void {
+  // Rejects empty values that are neither a URL nor a relative path.
+  private validateURLInput(url: string): void {
     if (typeof url !== 'string' || url.trim().length === 0) {
       throw new BadRequestException('Invalid URL: must be a non-empty string');
     }
@@ -456,6 +482,7 @@ export class XMDCentre implements OnModuleDestroy {
 }
 
 class FlashvarsParseError extends Error {
+  // Builds a parse error for invalid or missing flashvars.
   constructor(message: string) {
     super(message);
     this.name = 'FlashvarsParseError';
@@ -464,6 +491,7 @@ class FlashvarsParseError extends Error {
 
 const FLASHVARS_ASSIGN = /(?:(?:var|let|const)\s+)?(?:window\.)?flashvars\s*=\s*\{/i;
 
+// Finds flashvars in page HTML and parses them into a plain object.
 export function parseFlashvarsFromHtml(html: string): Record<string, unknown> {
   if (typeof html !== 'string' || html.trim().length === 0) {
     throw new FlashvarsParseError('flashvars not found');
@@ -484,6 +512,7 @@ export function parseFlashvarsFromHtml(html: string): Record<string, unknown> {
   throw new FlashvarsParseError('flashvars not found');
 }
 
+// Collects script bodies that look like they assign flashvars.
 function collectFlashvarsSources(html: string): string[] {
   const $ = cheerio.load(html);
   const sources: string[] = [];
@@ -502,6 +531,7 @@ function collectFlashvarsSources(html: string): string[] {
   return sources;
 }
 
+// Cuts the `{ ... }` object literal out of a flashvars assignment.
 function extractFlashvarsObjectLiteral(source: string): string | null {
   const match = source.match(FLASHVARS_ASSIGN);
   if (!match || match.index === undefined) {
@@ -512,6 +542,7 @@ function extractFlashvarsObjectLiteral(source: string): string | null {
   return extractBalancedObject(source, braceAt);
 }
 
+// Returns the balanced `{ ... }` slice starting at the given brace.
 function extractBalancedObject(source: string, start: number): string | null {
   if (source[start] !== '{') {
     return null;
@@ -557,6 +588,7 @@ function extractBalancedObject(source: string, start: number): string | null {
   return null;
 }
 
+// Parses a flashvars object as JSON, then as a JS object literal if needed.
 function parseFlashvarsObjectLiteral(literal: string): Record<string, unknown> | null {
   try {
     const json = JSON.parse(literal) as unknown;
@@ -575,6 +607,7 @@ function parseFlashvarsObjectLiteral(literal: string): Record<string, unknown> |
   }
 }
 
+// True when the value is a plain object, not an array or null.
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -582,8 +615,10 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 class FlashvarsLiteralParser {
   private i = 0;
 
+  // Holds the flashvars literal and a cursor used while parsing it.
   constructor(private readonly src: string) {}
 
+  // Parses the whole source as one object and rejects leftover text.
   public parseRootObject(): Record<string, unknown> {
     const value = this.parseValue();
     this.skipWs();
@@ -596,6 +631,7 @@ class FlashvarsLiteralParser {
     return value;
   }
 
+  // Parses the next JSON-like value: object, array, string, number, or keyword.
   private parseValue(): unknown {
     this.skipWs();
     const ch = this.src[this.i];
@@ -628,6 +664,7 @@ class FlashvarsLiteralParser {
     throw new FlashvarsParseError('flashvars invalid');
   }
 
+  // Parses a `{ key: value, ... }` object, including unquoted keys.
   private parseObject(): Record<string, unknown> {
     this.expect('{');
     const out: Record<string, unknown> = {};
@@ -667,6 +704,7 @@ class FlashvarsLiteralParser {
     throw new FlashvarsParseError('flashvars invalid');
   }
 
+  // Parses a `[ value, ... ]` array.
   private parseArray(): unknown[] {
     this.expect('[');
     const out: unknown[] = [];
@@ -702,6 +740,7 @@ class FlashvarsLiteralParser {
     throw new FlashvarsParseError('flashvars invalid');
   }
 
+  // Parses an object key as a quoted string or a bare identifier.
   private parseKey(): string {
     const ch = this.peek();
     if (ch === '"' || ch === "'") {
@@ -719,6 +758,7 @@ class FlashvarsLiteralParser {
     return this.src.slice(start, this.i);
   }
 
+  // Parses a single- or double-quoted string, including escapes.
   private parseString(): string {
     const quote = this.peek();
     if (quote !== '"' && quote !== "'") {
@@ -745,6 +785,7 @@ class FlashvarsLiteralParser {
     throw new FlashvarsParseError('flashvars invalid');
   }
 
+  // Resolves one `\` escape sequence inside a string.
   private parseEscape(): string {
     const ch = this.src[this.i];
     if (ch === undefined) {
@@ -777,6 +818,7 @@ class FlashvarsLiteralParser {
     }
   }
 
+  // Parses a finite number, including a leading minus and a decimal part.
   private parseNumber(): number {
     const start = this.i;
     if (this.peek() === '-') {
@@ -812,6 +854,7 @@ class FlashvarsLiteralParser {
     return n;
   }
 
+  // Consumes the next character, or throws if it does not match.
   private expect(ch: string): void {
     if (this.src[this.i] !== ch) {
       throw new FlashvarsParseError('flashvars invalid');
@@ -819,28 +862,34 @@ class FlashvarsLiteralParser {
     this.i += 1;
   }
 
+  // Returns the current character without consuming it.
   private peek(): string {
     return this.src[this.i];
   }
 
+  // Skips spaces and newlines before the next token.
   private skipWs(): void {
     while (this.i < this.src.length && /\s/.test(this.src[this.i])) {
       this.i += 1;
     }
   }
 
+  // True when the character is a decimal digit.
   private isDigit(ch: string | undefined): boolean {
     return ch !== undefined && ch >= '0' && ch <= '9';
   }
 
+  // True when the character can start a JS identifier.
   private isIdentStart(ch: string | undefined): boolean {
     return ch !== undefined && /[A-Za-z_$]/.test(ch);
   }
 
+  // True when the character can continue a JS identifier.
   private isIdentPart(ch: string | undefined): boolean {
     return ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
   }
 
+  // True when the next character ends a keyword such as true or null.
   private isTermEnd(index: number): boolean {
     const ch = this.src[index];
     return ch === undefined || /[\s,}\]]/.test(ch);

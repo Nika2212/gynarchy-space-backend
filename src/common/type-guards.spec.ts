@@ -1,6 +1,4 @@
 import {
-  decryptShortTokenToUrl,
-  encryptUrlToShortToken,
   isArray,
   isBoolean,
   isDefined,
@@ -17,7 +15,7 @@ import {
   isPlainObject,
   isString,
   parseIntStrict,
-} from './utils';
+} from './type-guards';
 
 describe('isString', () => {
   it('returns true for strings', () => {
@@ -275,51 +273,5 @@ describe('parseIntStrict', () => {
   it('respects radix', () => {
     expect(parseIntStrict('ff', 16)).toBe(255);
     expect(parseIntStrict('10', 2)).toBe(2);
-  });
-});
-
-describe('encryptUrlToShortToken / decryptShortTokenToUrl (base64url)', () => {
-  const uniqueUrl = (n: number) => `https://example.com/t/${Date.now()}-${n}-${Math.random()}`;
-
-  it('throws TypeError for empty or whitespace-only input', () => {
-    expect(() => encryptUrlToShortToken('')).toThrow(TypeError);
-    expect(() => encryptUrlToShortToken('   ')).toThrow('URL must be a non-empty string');
-  });
-
-  it('throws TypeError for non-http(s) URLs', () => {
-    expect(() => encryptUrlToShortToken('ftp://example.com/a')).toThrow(TypeError);
-    expect(() => encryptUrlToShortToken('file:///tmp/x')).toThrow(TypeError);
-    expect(() => encryptUrlToShortToken('not a url')).toThrow(TypeError);
-  });
-
-  it('is deterministic for the same URL', () => {
-    const url = uniqueUrl(2);
-    const a = encryptUrlToShortToken(url);
-    const b = encryptUrlToShortToken(url);
-    expect(a).toBe(b);
-  });
-
-  it('round-trips URL via token (no dictionary)', () => {
-    const url = uniqueUrl(10);
-    const token = encryptUrlToShortToken(url);
-    expect(typeof token).toBe('string');
-    expect(token.length).toBeGreaterThan(0);
-    expect(decryptShortTokenToUrl(token)).toBe(url);
-  });
-
-  it('trims URL before encrypt', () => {
-    const url = uniqueUrl(3);
-    const spaced = `  ${url}  `;
-    const token = encryptUrlToShortToken(spaced);
-    expect(token).toBe(encryptUrlToShortToken(url.trim()));
-    expect(decryptShortTokenToUrl(token)).toBe(url.trim());
-  });
-
-  it('decryptShortTokenToUrl returns undefined for blank, garbage, or non-url token', () => {
-    expect(decryptShortTokenToUrl('')).toBeUndefined();
-    expect(decryptShortTokenToUrl('   ')).toBeUndefined();
-    expect(decryptShortTokenToUrl('not-valid-base64url!!!')).toBeUndefined();
-    // decodes, but not a valid http(s) URL
-    expect(decryptShortTokenToUrl(Buffer.from('nope', 'utf8').toString('base64url'))).toBeUndefined();
   });
 });

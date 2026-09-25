@@ -1,3 +1,4 @@
+// Splits a comma-separated CORS_ORIGIN string into a list of origins.
 export function parseCorsOrigins(value: string | undefined): string[] {
   return (value ?? '')
     .split(',')
@@ -5,6 +6,7 @@ export function parseCorsOrigins(value: string | undefined): string[] {
     .filter((item) => item.length > 0);
 }
 
+// Reads TRUST_PROXY and returns hop count, or false when the proxy is off.
 export function resolveTrustProxy(value: string | undefined): number | false {
   if (!value) {
     return false;

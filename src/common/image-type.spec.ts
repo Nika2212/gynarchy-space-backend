@@ -1,4 +1,4 @@
-import { isSameSiteHost, normalizeAllowedImageType } from './image-proxy';
+import { isSameSiteHost, normalizeAllowedImageType } from './image-type';
 
 describe('normalizeAllowedImageType', () => {
   it('allows raster image types and strips parameters', () => {

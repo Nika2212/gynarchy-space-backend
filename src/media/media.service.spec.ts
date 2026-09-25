@@ -1,9 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PER_PAGE_SIZE, XMDCentre } from '../../centres/XMD.centre';
-import type { IMediaInfo } from '../../interfaces/media-info.interface';
+import { PER_PAGE_SIZE, XMDCentre } from '../centres/XMD.centre';
+import { MediaRepository } from '../database/media.repository';
+import type { IMediaInfo } from '../interfaces/media-info.interface';
 import { MediaService } from './media.service';
-import { DatabaseService } from '../../database/database.service';
 
 function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
   return {
@@ -31,7 +31,7 @@ describe('MediaService', () => {
           useValue: { search },
         },
         {
-          provide: DatabaseService,
+          provide: MediaRepository,
           useValue: {
             findByIdentifiers: jest.fn().mockResolvedValue([]),
             upsertFromSearch: jest.fn().mockResolvedValue(undefined),
@@ -89,9 +89,9 @@ describe('MediaService', () => {
 
   it('propagates errors from XMDCentre.search', async () => {
     search.mockRejectedValue(new Error('upstream'));
-    await expect(
-      service.findAll({ keyword: 'k', page: 1, sort: '', filter: '' }),
-    ).rejects.toThrow('upstream');
+    await expect(service.findAll({ keyword: 'k', page: 1, sort: '', filter: '' })).rejects.toThrow(
+      'upstream',
+    );
   });
 
   it('propagates BadRequestException from XMDCentre.search', async () => {
