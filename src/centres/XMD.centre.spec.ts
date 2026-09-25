@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: '.env.dev' });
 
 import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
@@ -20,10 +20,6 @@ describe('XMDCentre (integration)', () => {
     const xmdUrl = process.env.XMD;
     if (!xmdUrl) {
       throw new Error('XMD env variable is required — add it to .env at the project root');
-    }
-
-    if (!process.env.CRYPTA) {
-      process.env.CRYPTA = 'integration-test-url-token-secret-key';
     }
 
     mockConfig.set('XMD', xmdUrl);
@@ -100,10 +96,6 @@ describe('XMDCentre (integration)', () => {
     );
   });
 
-  /**
-   * Live `getUrl` needs a watch URL the origin serves. Search currently returns `/media/{token}` tokens;
-   * resolving those over HTTP may 404 until the server maps tokens → real routes. Validation-only tests stay on.
-   */
   describe('getUrl()', () => {
     it('should reject empty URL with 400 Bad Request', async () => {
       await expect(centre.getUrl('')).rejects.toBeInstanceOf(BadRequestException);

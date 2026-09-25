@@ -5,8 +5,10 @@ import { IMediaContainer } from '../../interfaces/media-container.interface';
 import { MediaService } from '../services/media.service';
 import { isNumberedString } from '../helpers/utils';
 import { SecurityGuard } from '../services/security.service';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
-@UseGuards(SecurityGuard)
+@UseGuards(ThrottlerGuard, SecurityGuard)
+@Throttle({ default: { limit: 120, ttl: 60000 } })
 @Controller('media')
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
@@ -21,6 +23,7 @@ export class MediaController {
   }
 
   @Get(':id')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   public async findOne(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
     const range = req.headers.range as string;

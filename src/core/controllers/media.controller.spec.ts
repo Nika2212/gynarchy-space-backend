@@ -1,8 +1,10 @@
 import { INestApplication, InternalServerErrorException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import type { IMediaContainer } from '../../interfaces/media-container.interface';
 import { MediaService } from '../services/media.service';
+import { SecurityGuard } from '../services/security.service';
 import { MediaController } from './media.controller';
 
 describe('MediaController', () => {
@@ -25,7 +27,12 @@ describe('MediaController', () => {
           useValue: { findAll },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(SecurityGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();

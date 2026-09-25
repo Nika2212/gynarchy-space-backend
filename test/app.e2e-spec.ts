@@ -12,18 +12,18 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 
-require('dotenv').config();
+require('dotenv').config({ path: '.env.dev' });
 
 describe('App (e2e)', () => {
   let app: INestApplication<App>;
+  let accessToken: string;
 
   beforeAll(() => {
-    if (!process.env.CRYPTA) {
-      process.env.CRYPTA = 'e2e-test-crypta-key-for-url-tokens';
-    }
-    if (!process.env.XMD) {
-      throw new Error('XMD must be set in .env (or environment) for e2e — same as integration tests');
+    process.env.NODE_ENV = 'development';
+    if (!process.env.XMD || !process.env.JWT_SECRET || !process.env.APP_PASSCODE || !process.env.CORS_ORIGIN) {
+      throw new Error('XMD, JWT_SECRET, APP_PASSCODE, and CORS_ORIGIN must be set in .env.dev for e2e');
     }
   });
 
@@ -32,8 +32,16 @@ describe('App (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
+    configureApp(app);
     await app.init();
+
+    const login = await request(app.getHttpServer())
+      .post('/api/security/passcode')
+      .send({ passcode: process.env.APP_PASSCODE })
+      .expect(200);
+
+    accessToken = (login.body as { accessToken: string }).accessToken;
   });
 
   afterEach(async () => {
@@ -44,7 +52,22 @@ describe('App (e2e)', () => {
     return request(app.getHttpServer()).get('/').expect(404);
   });
 
-  it('GET /media without keyword returns 400', () => {
-    return request(app.getHttpServer()).get('/media').expect(400);
+  it('GET /api/health returns 200 without auth', () => {
+    return request(app.getHttpServer()).get('/api/health').expect(200).expect({ status: 'ok' });
+  });
+
+  it('GET /api/media without token returns 401', () => {
+    return request(app.getHttpServer()).get('/api/media').expect(401);
+  });
+
+  it('GET /api/media without keyword returns 400', () => {
+    return request(app.getHttpServer())
+      .get('/api/media')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
+  });
+
+  it('POST /api/security/passcode without body returns 400', () => {
+    return request(app.getHttpServer()).post('/api/security/passcode').send({}).expect(400);
   });
 });

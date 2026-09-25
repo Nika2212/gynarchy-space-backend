@@ -1,8 +1,8 @@
-import { Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { SecurityService } from '../services/security.service';
-import type { Request, Response } from 'express';
 import { IAuth } from '../../interfaces/auth.interface';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { PasscodeDto } from '../dto/passcode.dto';
 
 @Controller('security')
 export class SecurityController {
@@ -11,9 +11,8 @@ export class SecurityController {
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 6, ttl: 60000 } })
   @Post('passcode')
-  public async passcode(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const accessToken: IAuth = await this.securityService.auth(req.body.passcode);
-
-    res.json(accessToken);
+  @HttpCode(HttpStatus.OK)
+  public async passcode(@Body() body: PasscodeDto): Promise<IAuth> {
+    return this.securityService.auth(body.passcode);
   }
 }

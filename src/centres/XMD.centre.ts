@@ -2,6 +2,8 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   InternalServerErrorException,
   OnModuleDestroy,
@@ -15,13 +17,21 @@ import { Console } from '../core/helpers/console';
 import { IMediaInfo } from '../interfaces/media-info.interface';
 import { timeToMs } from '../core/helpers/time';
 import { assertValidHttpUrl, encryptUrlToShortToken } from '../core/helpers/utils';
+import { isSameSiteHost } from '../core/helpers/image-proxy';
 import { parseFlashvarsFromHtml } from './xmd-flashvars';
 
 export const PER_PAGE_SIZE: number = 24;
 
-const KT_PLAYER_TIMEOUT: number = 200;
-const KT_PLAYER_RESOLVE_DELAY: number = 100;
-const KT_PLAYER_PATH: string = path.join(process.cwd(), 'dist', 'assets', 'kt_player.js');
+const KT_PLAYER_TIMEOUT: number = 2000;
+const KT_PLAYER_RESOLVE_DELAY: number = 200;
+const KT_PLAYER_PATHS: string[] = [
+  path.join(__dirname, '..', 'assets', 'kt_player.js'),
+  path.join(process.cwd(), 'dist', 'assets', 'kt_player.js'),
+  path.join(process.cwd(), 'src', 'assets', 'kt_player.js'),
+];
+const URL_CACHE_LIMIT: number = 128;
+const JSDOM_CONCURRENCY: number = 4;
+const JSDOM_QUEUE_LIMIT: number = 8;
 const MIN_SEARCH_KEYWORD_LENGTH: number = 1;
 const MAX_SEARCH_KEYWORD_LENGTH: number = 200;
 const MIN_PAGE_NUMBER: number = 1;
@@ -53,6 +63,8 @@ export class XMDCentre implements OnModuleDestroy {
   private readonly initAbort: AbortController = new AbortController();
   private ktPlayerCache: string | null = null;
   private urlCache: Map<string, string> = new Map<string, string>();
+  private jsdomInFlight = 0;
+  private readonly jsdomQueue: Array<() => void> = [];
 
   constructor(private readonly configService: ConfigService) {
     this.base = (this.configService.get<string>('XMD') ?? '').trim();
@@ -91,6 +103,18 @@ export class XMDCentre implements OnModuleDestroy {
     this.initAbort.abort();
   }
 
+  public isAllowedAssetUrl(url: string): boolean {
+    try {
+      const target = new URL(url);
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        return false;
+      }
+      return isSameSiteHost(target.hostname, new URL(this.base).hostname);
+    } catch {
+      return false;
+    }
+  }
+
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
     const normalizedKeyword = typeof keyword === 'string' ? keyword.trim() : keyword;
     this.validateSearchInput(normalizedKeyword, page);
@@ -110,6 +134,9 @@ export class XMDCentre implements OnModuleDestroy {
 
       return this.parseSearch(data);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.handleAxiosError(error, 'search()', { keyword: normalizedKeyword, page });
     }
   }
@@ -125,17 +152,20 @@ export class XMDCentre implements OnModuleDestroy {
       const { data } = await this.http.get(url);
       const extractedURL = await this.extractMediaUrl(data);
 
-      if (this.urlCache.size >= 128) {
-        this.urlCache.clear();
+      if (this.urlCache.size >= URL_CACHE_LIMIT) {
+        const oldest = this.urlCache.keys().next().value;
+        if (oldest !== undefined) {
+          this.urlCache.delete(oldest);
+        }
       }
 
-      if (!this.urlCache.has(extractedURL)) {
-        this.urlCache.set(url, extractedURL);
-      }
-
+      this.urlCache.set(url, extractedURL);
       return extractedURL;
     } catch (error) {
-      this.urlCache.clear();
+      this.urlCache.delete(url);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.handleAxiosError(error, 'getUrl()', { url });
     }
   }
@@ -220,7 +250,42 @@ export class XMDCentre implements OnModuleDestroy {
     const flashvars = this.extractFlashVars(html);
     const ktPlayerScript = await this.loadKtPlayer();
 
-    return this.runKtPlayer(flashvars, ktPlayerScript);
+    return this.withJsdomSlot(() => this.runKtPlayer(flashvars, ktPlayerScript));
+  }
+
+  private async withJsdomSlot<T>(run: () => Promise<T>): Promise<T> {
+    await this.acquireJsdomSlot();
+    try {
+      return await run();
+    } finally {
+      this.releaseJsdomSlot();
+    }
+  }
+
+  private acquireJsdomSlot(): Promise<void> {
+    if (this.jsdomInFlight < JSDOM_CONCURRENCY) {
+      this.jsdomInFlight += 1;
+      return Promise.resolve();
+    }
+
+    if (this.jsdomQueue.length >= JSDOM_QUEUE_LIMIT) {
+      throw new HttpException('Playback capacity exceeded', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    return new Promise((resolve) => {
+      this.jsdomQueue.push(() => {
+        this.jsdomInFlight += 1;
+        resolve();
+      });
+    });
+  }
+
+  private releaseJsdomSlot(): void {
+    this.jsdomInFlight = Math.max(0, this.jsdomInFlight - 1);
+    const next = this.jsdomQueue.shift();
+    if (next) {
+      next();
+    }
   }
 
   private extractFlashVars(html: string): Record<string, unknown> {
@@ -236,17 +301,22 @@ export class XMDCentre implements OnModuleDestroy {
       return this.ktPlayerCache;
     }
 
-    try {
-      const content = await fs.readFile(KT_PLAYER_PATH, 'utf8');
-      this.ktPlayerCache = content;
-      return content;
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === 'ENOENT') {
-        throw new MediaExtractionException('kt_player.js missing');
+    let lastError: NodeJS.ErrnoException | undefined;
+
+    for (const candidate of KT_PLAYER_PATHS) {
+      try {
+        const content = await fs.readFile(candidate, 'utf8');
+        this.ktPlayerCache = content;
+        return content;
+      } catch (error) {
+        lastError = error as NodeJS.ErrnoException;
       }
-      throw new MediaExtractionException(`Failed to load kt_player.js: ${err.message}`);
     }
+
+    if (lastError?.code === 'ENOENT') {
+      throw new MediaExtractionException('kt_player.js missing');
+    }
+    throw new MediaExtractionException(`Failed to load kt_player.js: ${lastError?.message ?? 'unknown error'}`);
   }
 
   private runKtPlayer(flashvars: Record<string, unknown>, scriptContent: string): Promise<string> {

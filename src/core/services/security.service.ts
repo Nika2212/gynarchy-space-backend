@@ -2,6 +2,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 
 @Injectable()
 export class SecurityService {
@@ -11,9 +12,9 @@ export class SecurityService {
   ) {}
 
   public async auth(passcode: string) {
-    const secretPasscode = this.configService.get<string>('APP_PASSCODE');
+    const secretPasscode = this.configService.get<string>('APP_PASSCODE')?.trim() ?? '';
 
-    if (passcode !== secretPasscode) {
+    if (!secretPasscode || !safeEqual(passcode, secretPasscode)) {
       throw new UnauthorizedException('Invalid passcode');
     }
 
@@ -52,4 +53,13 @@ export class SecurityGuard implements CanActivate {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : undefined;
   }
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  if (a.length !== b.length) {
+    return false;
+  }
+  return timingSafeEqual(a, b);
 }
