@@ -9,15 +9,15 @@ import { JwtModule } from '@nestjs/jwt';
 import { SecurityController } from './core/controllers/security.controller';
 import { HealthController } from './core/controllers/health.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { resolveEnvFilePath } from './config/env';
 import { validateEnv } from './config/env.validation';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      envFilePath: resolveEnvFilePath(),
+      envFilePath: '.env',
       validate: validateEnv,
     }),
     JwtModule.registerAsync({
@@ -33,6 +33,7 @@ import { validateEnv } from './config/env.validation';
       ttl: 30000,
       blockDuration: 30000
     }]),
+    DatabaseModule,
   ],
   controllers: [HealthController, MediaController, ImagesController, SecurityController],
   providers: [SecurityService, SecurityGuard, XMDCentre, MediaService],

@@ -1,12 +1,3 @@
-jest.mock('../src/core/helpers/console', () => ({
-  Console: {
-    success: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
-
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -14,7 +5,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 
-require('dotenv').config({ path: '.env.dev' });
+require('dotenv').config({ path: '.env' });
 
 describe('App (e2e)', () => {
   let app: INestApplication<App>;
@@ -22,8 +13,16 @@ describe('App (e2e)', () => {
 
   beforeAll(() => {
     process.env.NODE_ENV = 'development';
-    if (!process.env.XMD || !process.env.JWT_SECRET || !process.env.APP_PASSCODE || !process.env.CORS_ORIGIN) {
-      throw new Error('XMD, JWT_SECRET, APP_PASSCODE, and CORS_ORIGIN must be set in .env.dev for e2e');
+    if (
+      !process.env.XMD ||
+      !process.env.JWT_SECRET ||
+      !process.env.APP_PASSCODE ||
+      !process.env.CORS_ORIGIN ||
+      !process.env.MONGODB_URI
+    ) {
+      throw new Error(
+        'XMD, JWT_SECRET, APP_PASSCODE, CORS_ORIGIN, and MONGODB_URI must be set in .env for e2e',
+      );
     }
   });
 

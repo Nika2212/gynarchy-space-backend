@@ -8,10 +8,9 @@ Base URL: `http://localhost:3000/api`
 
 ```bash
 npm install
-cp .env.example .env.dev
 ```
 
-Fill `.env.dev`:
+Fill `.env`:
 
 | Key | Required | Notes |
 |---|---|---|
@@ -21,12 +20,17 @@ Fill `.env.dev`:
 | `XMD` | yes | Origin base URL (`https://...`) |
 | `CORS_ORIGIN` | yes | Frontend origin(s), comma-separated. Must match the UI exactly, including port. Example: `http://localhost:4200` |
 | `TRUST_PROXY` | no | `0` locally. `1` (or hop count) behind Nginx/Caddy |
+| `MONGODB_URI` | yes | MongoDB Atlas SRV URL (`mongodb+srv://...`) |
+| `MONGODB_USERNAME` | no | Atlas user |
+| `MONGODB_PASSWORD` | no | Atlas password |
+
+Search/catalog comes from XMD. Likes, favorites, hidden, and watch state persist in MongoDB Atlas. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
 
 ```bash
 npm run start:dev
 ```
 
-Production: fill `.env.prod` and run `npm run start:prod`.
+Same `.env` is used for `start:dev` and `start:prod`. On Railway, set the same keys as service variables.
 
 ## Frontend contract
 
@@ -84,7 +88,11 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
       "description": "",
       "postedAt": "...",
       "duration": 0,
-      "thumbnailSrc": ["/images/<token>", "..."]
+      "thumbnailSrc": ["/images/<token>", "..."],
+      "isLiked": false,
+      "isFavorite": false,
+      "isHidden": false,
+      "watchedTimes": 0
     }
   ]
 }
@@ -128,20 +136,38 @@ Supports `Range`. Response is `video/*` (or `video/mp4` when the origin sends `a
 | 429 | More than 20 watches / minute, or JSDOM queue full |
 | 502 | Upstream stream failed |
 
+### Like / favorite / hide (JWT)
+
+Toggles persist in MongoDB. Search results include the current flags.
+
+`GET /api/media/:id/like`  
+`GET /api/media/:id/favorite`  
+`GET /api/media/:id/hide`
+
+**200**
+
+```json
+{
+  "identifier": "<id>",
+  "isLiked": true,
+  "isFavorite": false,
+  "isHidden": false,
+  "watchedAt": null,
+  "watchedTimes": 0,
+  "watchPositionAt": null
+}
+```
+
 ### Not implemented
 
-These only return a placeholder message. Do not build product UI on them:
-
-- `GET /api/media/:id/like`
-- `GET /api/media/:id/favorite`
-- `GET /api/media/:id/download`
+- `GET /api/media/:id/download` — placeholder only (no file storage)
 
 ## Scripts
 
 ```bash
 npm run start:dev    # watch
-npm run start        # dist, .env.dev
-npm run start:prod   # dist, .env.prod
+npm run start        # dist, development
+npm run start:prod   # dist, production
 npm test
 npm run test:e2e
 ```

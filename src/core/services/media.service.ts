@@ -9,22 +9,64 @@ import type { Response } from 'express';
 import { isIP } from 'node:net';
 import { decryptShortTokenToUrl } from '../helpers/utils';
 import { normalizeAllowedImageType } from '../helpers/image-proxy';
+import { DatabaseService } from '../../database/database.service';
 
 @Injectable()
 export class MediaService {
-  constructor(private readonly xmdCentre: XMDCentre) {}
+  constructor(
+    private readonly xmdCentre: XMDCentre,
+    private readonly databaseService: DatabaseService,
+  ) {}
 
   public async findAll(query: IFindAll): Promise<IMediaContainer> {
     const medias: IMediaInfo[] = await this.xmdCentre.search(query.keyword, query.page);
+    await this.databaseService.upsertFromSearch(medias);
+    const rows = await this.databaseService.findByIdentifiers(
+      medias.map((media) => media.identifier).filter((id): id is string => Boolean(id)),
+    );
+    const byId = new Map(rows.map((row) => [row.identifier, row]));
+
     const meta: IMeta = {
       currentPage: query.page,
       isLastPage: medias.length < PER_PAGE_SIZE,
     };
 
     return {
-      medias,
+      medias: medias.map((media) => {
+        const row = media.identifier ? byId.get(media.identifier) : undefined;
+        return {
+          ...media,
+          isLiked: row?.isLiked ?? false,
+          isFavorite: row?.isFavorite ?? false,
+          isHidden: row?.isHidden ?? false,
+          watchedAt: row?.watchedAt ?? undefined,
+          watchedTimes: row?.watchedTimes ?? 0,
+          watchPositionAt: row?.watchPositionAt ?? undefined,
+        };
+      }),
       meta,
     };
+  }
+
+  public async toggleLike(id: string) {
+    if (!id || !decryptShortTokenToUrl(id)) {
+      throw new NotFoundException('Invalid media id');
+    }
+    return this.databaseService.toggleLike(id);
+  }
+
+  public async toggleFavorite(id: string) {
+    if (!id || !decryptShortTokenToUrl(id)) {
+      throw new NotFoundException('Invalid media id');
+    }
+    return this.databaseService.toggleFavorite(id);
+  }
+
+  public async toggleHidden(id: string) {
+    if (!id || !decryptShortTokenToUrl(id)) {
+      throw new NotFoundException('Invalid media id');
+    }
+    return this.databaseService.toggleHidden(id);
   }
 
   public async find(id: string, range: string, response: Response): Promise<void> {

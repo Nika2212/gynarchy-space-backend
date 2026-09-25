@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PER_PAGE_SIZE, XMDCentre } from '../../centres/XMD.centre';
 import type { IMediaInfo } from '../../interfaces/media-info.interface';
 import { MediaService } from './media.service';
+import { DatabaseService } from '../../database/database.service';
 
 function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
   return {
@@ -28,6 +29,13 @@ describe('MediaService', () => {
         {
           provide: XMDCentre,
           useValue: { search },
+        },
+        {
+          provide: DatabaseService,
+          useValue: {
+            findByIdentifiers: jest.fn().mockResolvedValue([]),
+            upsertFromSearch: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

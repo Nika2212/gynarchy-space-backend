@@ -40,15 +40,19 @@ export class MediaController {
 
   @Get(':id/favorite')
   public async favorite(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const { id } = req.params;
-
-    res.status(200).json({ message: `This action removes the downloaded file for media #${id}` });
+    const payload = await this.mediaService.toggleFavorite(req.params.id as string);
+    res.status(200).json(payload);
   }
 
   @Get(':id/like')
   public async like(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const { id } = req.params;
+    const payload = await this.mediaService.toggleLike(req.params.id as string);
+    res.status(200).json(payload);
+  }
 
-    res.status(200).json({ message: `This action likes media #${id}` });
+  @Get(':id/hide')
+  public async hide(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const payload = await this.mediaService.toggleHidden(req.params.id as string);
+    res.status(200).json(payload);
   }
 }

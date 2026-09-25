@@ -39,10 +39,12 @@ lerna-debug.log*
 .env
 .env.dev
 .env.prod
+.env.example
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
+atlas-credentials.env
 
 # temp directory
 .temp

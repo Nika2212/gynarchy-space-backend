@@ -1,6 +1,6 @@
 import { parseCorsOrigins } from './http';
 
-const REQUIRED_KEYS = ['JWT_SECRET', 'APP_PASSCODE', 'XMD', 'CORS_ORIGIN'] as const;
+const REQUIRED_KEYS = ['JWT_SECRET', 'APP_PASSCODE', 'XMD', 'CORS_ORIGIN', 'MONGODB_URI'] as const;
 
 export function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
   for (const key of REQUIRED_KEYS) {
@@ -8,6 +8,11 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     if (typeof value !== 'string' || value.trim() === '') {
       throw new Error(`${key} is required`);
     }
+  }
+
+  const mongoUri = String(config.MONGODB_URI).trim();
+  if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
+    throw new Error('MONGODB_URI must be a mongodb:// or mongodb+srv:// URL');
   }
 
   const origins = parseCorsOrigins(String(config.CORS_ORIGIN));
