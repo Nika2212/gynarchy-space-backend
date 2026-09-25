@@ -3,6 +3,7 @@ import type { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
 import { promises as fs } from 'fs';
 import { JSDOM } from 'jsdom';
+import * as urlToken from '../../shared/url-token';
 import { XMDCentre } from './XMD.centre';
 
 const PLAYER_OK = `
@@ -78,9 +79,15 @@ describe('XMDCentre (unit)', () => {
     const centre = new XMDCentre(config('https://x.test'));
     await new Promise((resolve) => setImmediate(resolve));
 
-    const canceled = new AxiosError('canceled', 'ERR_CANCELED');
-    canceled.code = 'ERR_CANCELED';
-    http.head.mockRejectedValueOnce(canceled);
+    http.head.mockImplementationOnce((_url, options: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          const canceled = new AxiosError('canceled', 'ERR_CANCELED');
+          canceled.code = 'ERR_CANCELED';
+          reject(canceled);
+        });
+      });
+    });
     const aborted = new XMDCentre(config('https://x.test'));
     aborted.onModuleDestroy();
     await new Promise((resolve) => setImmediate(resolve));
@@ -112,6 +119,11 @@ describe('XMDCentre (unit)', () => {
     expect(results[0].title).toBe('Title');
     expect(results[0].thumbnailSrc).toHaveLength(6);
     expect(results[0].url).toMatch(/^\/media\//);
+
+    jest.spyOn(urlToken, 'encryptURLToShortToken').mockImplementation(() => {
+      throw new Error('token');
+    });
+    await expect(centre.search('gynarchy')).resolves.toEqual([]);
   });
 
   it('rethrows HttpExceptions from search and wraps other errors', async () => {
@@ -193,12 +205,33 @@ describe('XMDCentre (unit)', () => {
     await expect(centre.getURL('https://x.test/dom')).rejects.toThrow('XMDCentre error in getURL()');
   });
 
-  it('times out when kt_player never finishes', async () => {
-    readSpy.mockResolvedValue('function kt_player() {}');
+  it('clears pending animation-frame timers during cleanup', async () => {
+    const realSetTimeout = global.setTimeout;
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+      if (ms === 0) {
+        return realSetTimeout(fn as never, 5_000, ...args);
+      }
+      return realSetTimeout(fn as never, ms as number, ...args);
+    });
+    readSpy.mockResolvedValue(PLAYER_OK);
     const centre = new XMDCentre(config('https://x.test'));
     http.get.mockResolvedValue({ data: FLASHVARS_HTML });
-    await expect(centre.getURL('https://x.test/hang')).rejects.toThrow('kt_player timeout');
-  }, 5000);
+    await expect(centre.getURL('https://x.test/raf')).resolves.toBe('https://cdn.example.com/a.mp4');
+  });
+
+  it('rejects when the kt_player watchdog fires', async () => {
+    const realSetTimeout = global.setTimeout;
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+      if (ms === 2000) {
+        (fn as () => void)();
+        return 0 as unknown as NodeJS.Timeout;
+      }
+      return realSetTimeout(fn as never, ms as number, ...args);
+    });
+    const centre = new XMDCentre(config('https://x.test'));
+    http.get.mockResolvedValue({ data: FLASHVARS_HTML });
+    await expect(centre.getURL('https://x.test/watchdog')).rejects.toThrow('kt_player timeout');
+  });
 
   it('rejects when the JSDOM queue is full', async () => {
     readSpy.mockResolvedValue('function kt_player() {}');

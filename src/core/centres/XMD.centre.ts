@@ -91,12 +91,7 @@ export class XMDCentre implements OnModuleDestroy {
       },
     });
 
-    void this.onInit().catch((error) => {
-      this.logger.error(
-        `Initialization failed: ${(error as Error)?.message ?? 'unknown error'}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-    });
+    void this.onInit();
   }
 
   // Cancels the in-flight init request when the module shuts down.
@@ -540,7 +535,7 @@ function extractFlashvarsObjectLiteral(source: string): string | null {
 }
 
 // Returns the balanced `{ ... }` slice starting at the given brace.
-function extractBalancedObject(source: string, start: number): string | null {
+export function extractBalancedObject(source: string, start: number): string | null {
   if (source[start] !== '{') {
     return null;
   }
@@ -609,7 +604,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-class FlashvarsLiteralParser {
+export class FlashvarsLiteralParser {
   private i = 0;
 
   // Holds the flashvars literal and a cursor used while parsing it.
@@ -697,8 +692,6 @@ class FlashvarsLiteralParser {
 
       throw new FlashvarsParseError('flashvars invalid');
     }
-
-    throw new FlashvarsParseError('flashvars invalid');
   }
 
   // Parses a `[ value, ... ]` array.
@@ -733,8 +726,6 @@ class FlashvarsLiteralParser {
 
       throw new FlashvarsParseError('flashvars invalid');
     }
-
-    throw new FlashvarsParseError('flashvars invalid');
   }
 
   // Parses an object key as a quoted string or a bare identifier.
@@ -844,11 +835,7 @@ class FlashvarsLiteralParser {
       }
     }
 
-    const n = Number(this.src.slice(start, this.i));
-    if (!Number.isFinite(n)) {
-      throw new FlashvarsParseError('flashvars invalid');
-    }
-    return n;
+    return Number(this.src.slice(start, this.i));
   }
 
   // Consumes the next character, or throws if it does not match.

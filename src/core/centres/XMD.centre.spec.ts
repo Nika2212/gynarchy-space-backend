@@ -2,7 +2,7 @@ require('dotenv').config({ path: '.env' });
 
 import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { parseFlashvarsFromHtml, XMDCentre } from './XMD.centre';
+import { extractBalancedObject, FlashvarsLiteralParser, parseFlashvarsFromHtml, XMDCentre } from './XMD.centre';
 
 const mockConfig = new Map<string, string>();
 
@@ -135,6 +135,16 @@ describe('parseFlashvarsFromHtml', () => {
     expect(() => parseFlashvarsFromHtml('<script>var flashvars = { a: [1 2] }</script>')).toThrow('flashvars not found');
     expect(() => parseFlashvarsFromHtml('<script>var flashvars = { : 1 }</script>')).toThrow('flashvars not found');
     expect(() => parseFlashvarsFromHtml('<script>var flashvars = { a: [1,</script>')).toThrow('flashvars not found');
+  });
+
+  it('covers parser edge cases that HTML extraction cannot reach', () => {
+    expect(extractBalancedObject('x', 0)).toBeNull();
+    expect(() => new FlashvarsLiteralParser('{ a: 1 } extra').parseRootObject()).toThrow('flashvars invalid');
+    expect(() => new FlashvarsLiteralParser('[1]').parseRootObject()).toThrow('flashvars invalid');
+    const parser = new FlashvarsLiteralParser('{ a: 1 }');
+    expect(() => (parser as unknown as { parseString: () => string }).parseString()).toThrow('flashvars invalid');
+    expect(() => new FlashvarsLiteralParser('{ a: "\\').parseRootObject()).toThrow('flashvars invalid');
+    expect(() => new FlashvarsLiteralParser('{ a: "foo').parseRootObject()).toThrow('flashvars invalid');
   });
 });
 
