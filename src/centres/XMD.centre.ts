@@ -7,14 +7,15 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JSDOM, VirtualConsole } from 'jsdom';
+import { JSDOM } from 'jsdom';
 import { promises as fs } from 'fs';
 import path from 'path';
 
 import { Console } from '../core/helpers/console';
 import { IMediaInfo } from '../interfaces/media-info.interface';
 import { timeToMs } from '../core/helpers/time';
-import { encryptUrlToShortToken } from '../core/helpers/utils';
+import { assertValidHttpUrl, encryptUrlToShortToken } from '../core/helpers/utils';
+import { parseFlashvarsFromHtml } from './xmd-flashvars';
 
 export const PER_PAGE_SIZE: number = 24;
 
@@ -38,19 +39,6 @@ class MediaExtractionException extends XMDCentreException {
   }
 }
 
-function detachFlashvars(vars: object): Record<string, unknown> {
-  try {
-    return JSON.parse(JSON.stringify(vars)) as Record<string, unknown>;
-  } catch {
-    return Object.fromEntries(
-      Object.entries(vars as Record<string, unknown>).filter(
-        ([, v]) =>
-          v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
-      ),
-    );
-  }
-}
-
 function isInitAbortedError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) {
     return false;
@@ -67,9 +55,15 @@ export class XMDCentre implements OnModuleDestroy {
   private urlCache: Map<string, string> = new Map<string, string>();
 
   constructor(private readonly configService: ConfigService) {
-    this.base = this.configService.get<string>('XMD') as string;
+    this.base = (this.configService.get<string>('XMD') ?? '').trim();
 
     if (!this.base) {
+      throw new XMDCentreException('XMD base URL is not configured');
+    }
+
+    try {
+      assertValidHttpUrl(this.base);
+    } catch {
       throw new XMDCentreException('XMD base URL is not configured');
     }
 
@@ -98,15 +92,16 @@ export class XMDCentre implements OnModuleDestroy {
   }
 
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
-    this.validateSearchInput(keyword, page);
+    const normalizedKeyword = typeof keyword === 'string' ? keyword.trim() : keyword;
+    this.validateSearchInput(normalizedKeyword, page);
 
     try {
-      const { data } = await this.http.get(`/search/${keyword}`, {
+      const { data } = await this.http.get(`/search/${encodeURIComponent(normalizedKeyword)}`, {
         params: {
           mode: 'async',
           function: 'get_block',
           block_id: 'list_videos_videos_list_search_result',
-          q: keyword,
+          q: normalizedKeyword,
           from_videos: page,
           from_albums: page,
         },
@@ -115,7 +110,7 @@ export class XMDCentre implements OnModuleDestroy {
 
       return this.parseSearch(data);
     } catch (error) {
-      this.handleAxiosError(error, 'search()', { keyword, page });
+      this.handleAxiosError(error, 'search()', { keyword: normalizedKeyword, page });
     }
   }
 
@@ -166,31 +161,55 @@ export class XMDCentre implements OnModuleDestroy {
     const results: IMediaInfo[] = [];
 
     $('#list_videos_videos_list_search_result_items .item').each((_, el) => {
-      const node = $(el);
+      try {
+        const node = $(el);
 
-      const thumb = node.find('img.thumb').attr('data-original')?.replace('videos_screenshots', 'videos_sources')?.replace('320x180', 'screenshots');
+        const rawThumb = node
+          .find('img.thumb')
+          .attr('data-original')
+          ?.replace('videos_screenshots', 'videos_sources')
+          ?.replace('320x180', 'screenshots');
+        const thumb = rawThumb ? this.toAbsoluteHttpUrl(rawThumb) : undefined;
+        if (!thumb) {
+          return;
+        }
 
-      if (!thumb) return;
+        const href = node.find('a').attr('href');
+        const url = href ? this.toAbsoluteHttpUrl(href) : undefined;
+        if (!url) {
+          return;
+        }
 
-      const url = node.find('a').attr('href');
-      if (!url) {
+        const identifier = encryptUrlToShortToken(url);
+
+        results.push({
+          title: node.find('strong.title').text().trim(),
+          duration: timeToMs(node.find('.duration').text().trim()),
+          postedAt: node.find('.added').text().trim(),
+          thumbnailSrc: this.expandScreenshots(thumb).map((shot) => {
+            const absolute = this.toAbsoluteHttpUrl(shot) ?? shot;
+            return `/images/${encryptUrlToShortToken(absolute)}`;
+          }),
+          identifier,
+          url: `/media/${identifier}`,
+          description: '',
+        });
+      } catch {
         return;
       }
-
-      const identifier = encryptUrlToShortToken(url);
-
-      results.push({
-        title: node.find('strong.title').text().trim(),
-        duration: timeToMs(node.find('.duration').text().trim()),
-        postedAt: node.find('.added').text().trim(),
-        thumbnailSrc: this.expandScreenshots(thumb).map((url) => `/images/${encryptUrlToShortToken(url)}`),
-        identifier,
-        url: `/media/${identifier}`,
-        description: '',
-      });
     });
 
     return results;
+  }
+
+  private toAbsoluteHttpUrl(url: string): string | undefined {
+    try {
+      const absolute = new URL(url, this.base).href;
+      assertValidHttpUrl(absolute);
+      return absolute;
+    } catch {
+      return undefined;
+    }
   }
 
   private expandScreenshots(url: string): string[] {
@@ -205,26 +224,10 @@ export class XMDCentre implements OnModuleDestroy {
   }
 
   private extractFlashVars(html: string): Record<string, unknown> {
-    const virtualConsole = new VirtualConsole();
-    let dom: JSDOM | null = null;
-
     try {
-      dom = new JSDOM(html, {
-        runScripts: 'dangerously',
-        virtualConsole,
-      });
-
-      const vars = dom.window?.flashvars;
-
-      if (!vars || typeof vars !== 'object') {
-        throw new MediaExtractionException('flashvars not found');
-      }
-
-      return detachFlashvars(vars);
-    } finally {
-      if (dom) {
-        dom.window.close();
-      }
+      return parseFlashvarsFromHtml(html);
+    } catch {
+      throw new MediaExtractionException('flashvars not found');
     }
   }
 

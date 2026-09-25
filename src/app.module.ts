@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MediaController } from './core/controllers/media.controller';
+import { ImagesController } from './core/controllers/images.controller';
 import { MediaService } from './core/services/media.service';
 import { XMDCentre } from './centres/XMD.centre';
 import { SecurityGuard, SecurityService } from './core/services/security.service';
@@ -35,7 +36,7 @@ import { resolveEnvFilePath } from './config/env';
       blockDuration: 30000
     }]),
   ],
-  controllers: [MediaController, SecurityController],
+  controllers: [MediaController, ImagesController, SecurityController],
   providers: [SecurityService, SecurityGuard, XMDCentre, MediaService],
 })
 export class AppModule {}
