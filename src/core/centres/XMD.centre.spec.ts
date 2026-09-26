@@ -145,6 +145,8 @@ describe('parseFlashvarsFromHtml', () => {
     expect(() => (parser as unknown as { parseString: () => string }).parseString()).toThrow('flashvars invalid');
     expect(() => new FlashvarsLiteralParser('{ a: "\\').parseRootObject()).toThrow('flashvars invalid');
     expect(() => new FlashvarsLiteralParser('{ a: "foo').parseRootObject()).toThrow('flashvars invalid');
+    expect(() => new FlashvarsLiteralParser('{ a: 1,').parseRootObject()).toThrow('flashvars invalid');
+    expect(() => new FlashvarsLiteralParser('{ a: [1,').parseRootObject()).toThrow('flashvars invalid');
   });
 });
 

@@ -22,18 +22,22 @@ describe('MediaService', () => {
   let service: MediaService;
   let search: jest.Mock;
   let findByIdentifiers: jest.Mock;
+  let findByFlag: jest.Mock;
   let upsertFromSearch: jest.Mock;
   let toggleLike: jest.Mock;
   let toggleFavorite: jest.Mock;
   let toggleHidden: jest.Mock;
+  let saveWatchPosition: jest.Mock;
 
   beforeEach(async () => {
     search = jest.fn();
     findByIdentifiers = jest.fn().mockResolvedValue([]);
+    findByFlag = jest.fn().mockResolvedValue({ medias: [], total: 0 });
     upsertFromSearch = jest.fn().mockResolvedValue(undefined);
     toggleLike = jest.fn().mockResolvedValue({ isLiked: true });
     toggleFavorite = jest.fn().mockResolvedValue({ isFavorite: true });
     toggleHidden = jest.fn().mockResolvedValue({ isHidden: true });
+    saveWatchPosition = jest.fn().mockResolvedValue({ watchPositionAt: 12 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MediaService,
@@ -45,10 +49,12 @@ describe('MediaService', () => {
           provide: MediaRepository,
           useValue: {
             findByIdentifiers,
+            findByFlag,
             upsertFromSearch,
             toggleLike,
             toggleFavorite,
             toggleHidden,
+            saveWatchPosition,
           },
         },
       ],
@@ -151,6 +157,24 @@ describe('MediaService', () => {
     });
   });
 
+  it('findLiked and findFavorites return stored pages with search-shaped meta', async () => {
+    const liked = [mockMedia({ identifier: 'liked-1', isLiked: true })];
+    findByFlag.mockResolvedValueOnce({ medias: liked, total: PER_PAGE_SIZE + 1 });
+
+    await expect(service.findLiked(1)).resolves.toEqual({
+      medias: liked,
+      meta: { currentPage: 1, isLastPage: false },
+    });
+    expect(findByFlag).toHaveBeenCalledWith('isLiked', 1);
+
+    findByFlag.mockResolvedValueOnce({ medias: [], total: 0 });
+    await expect(service.findFavorites(0)).resolves.toEqual({
+      medias: [],
+      meta: { currentPage: 1, isLastPage: true },
+    });
+    expect(findByFlag).toHaveBeenCalledWith('isFavorite', 1);
+  });
+
   it('toggles flags only for a valid media token', async () => {
     const id = encryptURLToShortToken('https://example.com/v');
 
@@ -159,5 +183,18 @@ describe('MediaService', () => {
     await expect(service.toggleHidden(id)).resolves.toEqual({ isHidden: true });
     await expect(service.toggleLike('')).rejects.toThrow('Invalid media id');
     await expect(service.toggleFavorite('nope')).rejects.toThrow('Invalid media id');
+  });
+
+  it('saves watch position only for a valid media token and non-negative finite value', async () => {
+    const id = encryptURLToShortToken('https://example.com/v');
+
+    await expect(service.saveWatchPosition(id, 12_000)).resolves.toEqual({ watchPositionAt: 12 });
+    expect(saveWatchPosition).toHaveBeenCalledWith(id, 12_000);
+    await expect(service.saveWatchPosition('', 1)).rejects.toThrow('Invalid media id');
+    await expect(service.saveWatchPosition(id, -1)).rejects.toThrow('Invalid watchPositionAt');
+    await expect(service.saveWatchPosition(id, Number.NaN)).rejects.toThrow('Invalid watchPositionAt');
+    await expect(service.saveWatchPosition(id, Number.POSITIVE_INFINITY)).rejects.toThrow(
+      'Invalid watchPositionAt',
+    );
   });
 });

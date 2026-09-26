@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { PER_PAGE_SIZE } from '../core/centres/XMD.centre';
 import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
@@ -52,6 +53,27 @@ export class MediaRepository {
       .filter((row): row is MediaFlags => row !== undefined);
   }
 
+  // Loads one page of liked or favorited catalog rows, newest updates first.
+  public async findByFlag(
+    flag: 'isLiked' | 'isFavorite',
+    page: number,
+  ): Promise<{ medias: IMediaInfo[]; total: number }> {
+    const secret = this.secret();
+    const filter = { [flag]: true };
+    const skip = (page - 1) * PER_PAGE_SIZE;
+    const [rows, total] = await Promise.all([
+      this.mediaModel.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(PER_PAGE_SIZE).exec(),
+      this.mediaModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      medias: rows
+        .map((row) => this.toMediaInfo(row, secret))
+        .filter((media): media is IMediaInfo => media !== undefined),
+      total,
+    };
+  }
+
   // Saves or refreshes catalog fields from a search, without overwriting user flags.
   public async upsertFromSearch(medias: readonly IMediaInfo[]): Promise<void> {
     const secret = this.secret();
@@ -94,6 +116,42 @@ export class MediaRepository {
   // Flips the hidden flag for one media item.
   public async toggleHidden(identifier: string): Promise<MediaFlags> {
     return this.toggleFlag(identifier, 'isHidden');
+  }
+
+  // Writes the playback position and last-watched time for one media item.
+  public async saveWatchPosition(identifier: string, watchPositionAt: number): Promise<MediaFlags> {
+    const secret = this.secret();
+    const identifierHash = hashIdentifier(identifier, secret);
+    const existing = await this.mediaModel.findOne({ identifierHash }).exec();
+    const watchedAt = new Date();
+
+    if (!existing) {
+      const created = await this.mediaModel.create({
+        identifierHash,
+        ...this.encryptCatalog(
+          {
+            identifier,
+            url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
+            title: '',
+            description: '',
+            thumbnailSrc: [],
+            postedAt: '',
+            duration: 0,
+          },
+          secret,
+        ),
+        ...FLAG_DEFAULTS,
+        watchPositionAt,
+        watchedAt,
+        lastSeenAt: watchedAt,
+      });
+      return this.toFlags(created, secret)!;
+    }
+
+    existing.watchPositionAt = watchPositionAt;
+    existing.watchedAt = watchedAt;
+    await existing.save();
+    return this.toFlags(existing, secret)!;
   }
 
   // Creates the media row if needed, then flips the named boolean flag.
@@ -147,6 +205,48 @@ export class MediaRepository {
       duration: media.duration ?? 0,
       source: 'xmd',
     };
+  }
+
+  // Decrypts catalog fields into the public media card shape.
+  private toMediaInfo(row: MediaDocument, secret: string): IMediaInfo | undefined {
+    const identifier = tryDecryptText(row.identifier, secret);
+    if (!identifier) {
+      return undefined;
+    }
+
+    return {
+      identifier,
+      url: `/media/${identifier}`,
+      title: tryDecryptText(row.title, secret) ?? '',
+      description: tryDecryptText(row.description, secret) ?? '',
+      postedAt: tryDecryptText(row.postedAt, secret) ?? '',
+      duration: row.duration ?? 0,
+      thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(row.thumbnailSrc, secret)),
+      isLiked: row.isLiked,
+      isFavorite: row.isFavorite,
+      isHidden: row.isHidden,
+      watchedAt: row.watchedAt ?? undefined,
+      watchedTimes: row.watchedTimes ?? 0,
+      watchPositionAt: row.watchPositionAt ?? undefined,
+    };
+  }
+
+  // Parses stored thumbnail JSON into a string array, or empty on corrupt data.
+  private parseThumbnailSrc(raw: string | undefined): string[] {
+    if (!raw) {
+      return [];
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+        return parsed;
+      }
+    } catch {
+      return [];
+    }
+
+    return [];
   }
 
   // Decrypts the identifier and maps the row to public flag fields.

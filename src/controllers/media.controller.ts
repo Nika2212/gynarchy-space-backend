@@ -1,7 +1,8 @@
-import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { SecurityGuard } from '../core/security.guard';
+import { WatchPositionDTO } from '../DTOs/watch-position.DTO';
 import { MediaStreamService } from '../services/media-stream.service';
 import { MediaService } from '../services/media.service';
 import { isNumberedString } from '../shared/type-guards';
@@ -24,6 +25,22 @@ export class MediaController {
     query.page = isNumberedString(query.page) ? +query.page : 1;
     const payload: IMediaContainer = await this.mediaService.findAll(query);
 
+    res.status(200).json(payload);
+  }
+
+  @Get('liked')
+  // Returns a page of media items the user has liked.
+  public async findLiked(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const page = isNumberedString(req.query.page) ? +req.query.page : 1;
+    const payload: IMediaContainer = await this.mediaService.findLiked(page);
+    res.status(200).json(payload);
+  }
+
+  @Get('favorites')
+  // Returns a page of media items the user has favorited.
+  public async findFavorites(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const page = isNumberedString(req.query.page) ? +req.query.page : 1;
+    const payload: IMediaContainer = await this.mediaService.findFavorites(page);
     res.status(200).json(payload);
   }
 
@@ -63,6 +80,20 @@ export class MediaController {
   // Toggles the hidden flag for one media item.
   public async hide(@Req() req: Request, @Res() res: Response): Promise<void> {
     const payload = await this.mediaService.toggleHidden(req.params.id as string);
+    res.status(200).json(payload);
+  }
+
+  @Patch(':id/watch-position')
+  // Saves the playback position (milliseconds) for one media item.
+  public async saveWatchPosition(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: WatchPositionDTO,
+  ): Promise<void> {
+    const payload = await this.mediaService.saveWatchPosition(
+      req.params.id as string,
+      body.watchPositionAt,
+    );
     res.status(200).json(payload);
   }
 }

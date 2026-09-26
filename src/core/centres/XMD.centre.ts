@@ -692,6 +692,8 @@ export class FlashvarsLiteralParser {
 
       throw new FlashvarsParseError('flashvars invalid');
     }
+
+    throw new FlashvarsParseError('flashvars invalid');
   }
 
   // Parses a `[ value, ... ]` array.
@@ -726,6 +728,8 @@ export class FlashvarsLiteralParser {
 
       throw new FlashvarsParseError('flashvars invalid');
     }
+
+    throw new FlashvarsParseError('flashvars invalid');
   }
 
   // Parses an object key as a quoted string or a bare identifier.

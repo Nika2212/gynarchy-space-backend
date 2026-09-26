@@ -136,6 +136,20 @@ Supports `Range`. Response is `video/*` (or `video/mp4` when the origin sends `a
 | 429 | More than 20 watches / minute, or JSDOM queue full |
 | 502 | Upstream stream failed |
 
+### Liked / favorites lists (JWT)
+
+Same response shape as search. `page` defaults to `1`. 24 items per page, newest updates first.
+
+`GET /api/media/liked?page=1`  
+`GET /api/media/favorites?page=1`
+
+These are static paths. Do not confuse them with the toggle routes below.
+
+| Status | When |
+|---|---|
+| 401 | No/invalid token |
+| 429 | More than 120 / minute |
+
 ### Like / favorite / hide (JWT)
 
 Toggles persist in MongoDB. Search results include the current flags.
@@ -157,6 +171,39 @@ Toggles persist in MongoDB. Search results include the current flags.
   "watchPositionAt": null
 }
 ```
+
+### Watch position (JWT)
+
+`PATCH /api/media/:id/watch-position`
+
+Send this from the player about every 30 seconds. `watchPositionAt` is milliseconds (same unit as `duration`). Also sets `watchedAt` to now. Does not increment `watchedTimes`.
+
+```json
+{ "watchPositionAt": 45000 }
+```
+
+**200**
+
+```json
+{
+  "identifier": "<id>",
+  "isLiked": false,
+  "isFavorite": false,
+  "isHidden": false,
+  "watchedAt": "2026-09-26T06:30:00.000Z",
+  "watchedTimes": 0,
+  "watchPositionAt": 45000
+}
+```
+
+The next search for that item returns the saved `watchPositionAt` and `watchedAt`.
+
+| Status | When |
+|---|---|
+| 400 | Missing/invalid `watchPositionAt` (must be a finite number ≥ 0) or extra fields |
+| 401 | No/invalid token |
+| 404 | Bad id |
+| 429 | More than 120 / minute |
 
 ### Not implemented
 

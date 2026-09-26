@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PER_PAGE_SIZE, XMDCentre } from '../core/centres/XMD.centre';
 import { MediaRepository } from '../repositories/media.repository';
 import { decryptShortTokenToURL } from '../shared/url-token';
@@ -45,6 +45,16 @@ export class MediaService {
     };
   }
 
+  // Returns stored liked items with catalog fields and paging meta.
+  public async findLiked(page: number): Promise<IMediaContainer> {
+    return this.findFlagged('isLiked', page);
+  }
+
+  // Returns stored favorited items with catalog fields and paging meta.
+  public async findFavorites(page: number): Promise<IMediaContainer> {
+    return this.findFlagged('isFavorite', page);
+  }
+
   // Toggles liked after checking that the media id is a valid token.
   public async toggleLike(id: string) {
     this.assertMediaID(id);
@@ -61,6 +71,31 @@ export class MediaService {
   public async toggleHidden(id: string) {
     this.assertMediaID(id);
     return this.mediaRepository.toggleHidden(id);
+  }
+
+  // Saves playback position after checking that the media id and value are valid.
+  public async saveWatchPosition(id: string, watchPositionAt: number) {
+    this.assertMediaID(id);
+    if (!Number.isFinite(watchPositionAt) || watchPositionAt < 0) {
+      throw new BadRequestException('Invalid watchPositionAt');
+    }
+    return this.mediaRepository.saveWatchPosition(id, watchPositionAt);
+  }
+
+  // Loads one flag collection page and builds the search-shaped container.
+  private async findFlagged(
+    flag: 'isLiked' | 'isFavorite',
+    page: number,
+  ): Promise<IMediaContainer> {
+    const currentPage = Number.isInteger(page) && page > 0 ? page : 1;
+    const { medias, total } = await this.mediaRepository.findByFlag(flag, currentPage);
+    return {
+      medias,
+      meta: {
+        currentPage,
+        isLastPage: currentPage * PER_PAGE_SIZE >= total,
+      },
+    };
   }
 
   // Rejects ids that are empty or do not decode to an origin URL.
