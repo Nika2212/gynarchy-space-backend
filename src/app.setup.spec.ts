@@ -27,7 +27,11 @@ describe('configureApp', () => {
     configureApp(app);
     expect(instance.set).not.toHaveBeenCalled();
     expect(raw.setGlobalPrefix).toHaveBeenCalledWith('api');
-    expect(raw.enableCors).toHaveBeenCalledWith({ origin: ['http://localhost:4200'], credentials: false });
+    expect(raw.enableCors).toHaveBeenCalledWith({
+      origin: ['http://localhost:4200'],
+      credentials: false,
+      exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
+    });
     expect(raw.useGlobalPipes).toHaveBeenCalled();
   });
 

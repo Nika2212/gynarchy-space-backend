@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PER_PAGE_SIZE, XMDCentre } from '../core/centres/XMD.centre';
+import { XMDCentre } from '../core/centres/XMD.centre';
+import { PER_PAGE_SIZE } from '../shared/paging';
 import { MediaRepository } from '../repositories/media.repository';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
 import { encryptURLToShortToken } from '../shared/url-token';

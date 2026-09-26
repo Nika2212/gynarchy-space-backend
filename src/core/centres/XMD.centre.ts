@@ -19,8 +19,6 @@ import { timeToMS } from '../../shared/time';
 import { assertValidHTTPURL, encryptURLToShortToken } from '../../shared/url-token';
 import { isSameSiteHost } from '../../shared/image-type';
 
-export const PER_PAGE_SIZE: number = 24;
-
 const KT_PLAYER_TIMEOUT: number = 2000;
 const KT_PLAYER_RESOLVE_DELAY: number = 200;
 const KT_PLAYER_PATHS: string[] = [

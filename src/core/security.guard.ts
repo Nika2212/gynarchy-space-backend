@@ -11,7 +11,7 @@ export class SecurityGuard implements CanActivate {
   ) {}
 
   // Allows the request only when the Bearer JWT is present and valid.
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  public async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
 

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { PER_PAGE_SIZE } from '../core/centres/XMD.centre';
 import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
+import { parsePage, PER_PAGE_SIZE } from '../shared/paging';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
 import { MediaDocument } from './media.schema';
@@ -59,8 +59,9 @@ export class MediaRepository {
     page: number,
   ): Promise<{ medias: IMediaInfo[]; total: number }> {
     const secret = this.secret();
+    const currentPage = parsePage(page);
     const filter = { [flag]: true };
-    const skip = (page - 1) * PER_PAGE_SIZE;
+    const skip = (currentPage - 1) * PER_PAGE_SIZE;
     const [rows, total] = await Promise.all([
       this.mediaModel.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(PER_PAGE_SIZE).exec(),
       this.mediaModel.countDocuments(filter).exec(),
@@ -126,21 +127,7 @@ export class MediaRepository {
     const watchedAt = new Date();
 
     if (!existing) {
-      const created = await this.mediaModel.create({
-        identifierHash,
-        ...this.encryptCatalog(
-          {
-            identifier,
-            url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
-            title: '',
-            description: '',
-            thumbnailSrc: [],
-            postedAt: '',
-            duration: 0,
-          },
-          secret,
-        ),
-        ...FLAG_DEFAULTS,
+      const created = await this.createMissing(identifier, secret, {
         watchPositionAt,
         watchedAt,
         lastSeenAt: watchedAt,
@@ -164,30 +151,39 @@ export class MediaRepository {
     const existing = await this.mediaModel.findOne({ identifierHash }).exec();
 
     if (!existing) {
-      const created = await this.mediaModel.create({
-        identifierHash,
-        ...this.encryptCatalog(
-          {
-            identifier,
-            url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
-            title: '',
-            description: '',
-            thumbnailSrc: [],
-            postedAt: '',
-            duration: 0,
-          },
-          secret,
-        ),
-        ...FLAG_DEFAULTS,
-        [flag]: true,
-        lastSeenAt: new Date(),
-      });
+      const created = await this.createMissing(identifier, secret, { [flag]: true });
       return this.toFlags(created, secret)!;
     }
 
     existing[flag] = !existing[flag];
     await existing.save();
     return this.toFlags(existing, secret)!;
+  }
+
+  // Creates a catalog stub for a media id that has not been searched yet.
+  private async createMissing(
+    identifier: string,
+    secret: string,
+    extras: Partial<MediaDocument>,
+  ): Promise<MediaDocument> {
+    return this.mediaModel.create({
+      identifierHash: hashIdentifier(identifier, secret),
+      ...this.encryptCatalog(
+        {
+          identifier,
+          url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
+          title: '',
+          description: '',
+          thumbnailSrc: [],
+          postedAt: '',
+          duration: 0,
+        },
+        secret,
+      ),
+      ...FLAG_DEFAULTS,
+      lastSeenAt: new Date(),
+      ...extras,
+    });
   }
 
   // Encrypts catalog text and URL fields before they are stored.

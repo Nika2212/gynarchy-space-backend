@@ -5,7 +5,7 @@ import { SecurityGuard } from '../core/security.guard';
 import { WatchPositionDTO } from '../DTOs/watch-position.DTO';
 import { MediaStreamService } from '../services/media-stream.service';
 import { MediaService } from '../services/media.service';
-import { isNumberedString } from '../shared/type-guards';
+import { parsePage } from '../shared/paging';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
 
@@ -22,7 +22,7 @@ export class MediaController {
   // Returns a search page of media items and paging meta.
   public async findAll(@Req() req: Request, @Res() res: Response): Promise<void> {
     const query: IFindAll = req.query as unknown as IFindAll;
-    query.page = isNumberedString(query.page) ? +query.page : 1;
+    query.page = parsePage(query.page);
     const payload: IMediaContainer = await this.mediaService.findAll(query);
 
     res.status(200).json(payload);
@@ -31,16 +31,14 @@ export class MediaController {
   @Get('liked')
   // Returns a page of media items the user has liked.
   public async findLiked(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const page = isNumberedString(req.query.page) ? +req.query.page : 1;
-    const payload: IMediaContainer = await this.mediaService.findLiked(page);
+    const payload: IMediaContainer = await this.mediaService.findLiked(parsePage(req.query.page));
     res.status(200).json(payload);
   }
 
   @Get('favorites')
   // Returns a page of media items the user has favorited.
   public async findFavorites(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const page = isNumberedString(req.query.page) ? +req.query.page : 1;
-    const payload: IMediaContainer = await this.mediaService.findFavorites(page);
+    const payload: IMediaContainer = await this.mediaService.findFavorites(parsePage(req.query.page));
     res.status(200).json(payload);
   }
 

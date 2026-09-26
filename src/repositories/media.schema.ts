@@ -55,3 +55,6 @@ export class MediaDocument {
 export type MediaModel = HydratedDocument<MediaDocument>;
 
 export const MediaSchema = SchemaFactory.createForClass(MediaDocument);
+
+MediaSchema.index({ isLiked: 1, updatedAt: -1 });
+MediaSchema.index({ isFavorite: 1, updatedAt: -1 });

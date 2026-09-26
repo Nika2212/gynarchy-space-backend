@@ -25,6 +25,7 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: origins,
     credentials: false,
+    exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
   });
   app.use(
     helmet({

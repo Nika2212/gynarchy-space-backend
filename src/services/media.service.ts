@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PER_PAGE_SIZE, XMDCentre } from '../core/centres/XMD.centre';
+import { XMDCentre } from '../core/centres/XMD.centre';
 import { MediaRepository } from '../repositories/media.repository';
+import { parsePage, PER_PAGE_SIZE } from '../shared/paging';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
 import { IMediaInfo } from '../shared/interfaces/media-info.interface';
@@ -87,7 +88,7 @@ export class MediaService {
     flag: 'isLiked' | 'isFavorite',
     page: number,
   ): Promise<IMediaContainer> {
-    const currentPage = Number.isInteger(page) && page > 0 ? page : 1;
+    const currentPage = parsePage(page);
     const { medias, total } = await this.mediaRepository.findByFlag(flag, currentPage);
     return {
       medias,
