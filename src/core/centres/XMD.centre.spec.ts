@@ -208,10 +208,14 @@ describe('XMDCentre (integration)', () => {
       NETWORK_TIMEOUT,
     );
 
-    it('should reject empty keyword with 400 Bad Request', async () => {
-      await expect(centre.search('')).rejects.toBeInstanceOf(BadRequestException);
-      await expect(centre.search('   ')).rejects.toBeInstanceOf(BadRequestException);
-    });
+    it(
+      'should accept an empty keyword and return an array',
+      async () => {
+        const results = await centre.search('');
+        expect(Array.isArray(results)).toBe(true);
+      },
+      NETWORK_TIMEOUT,
+    );
 
     it('should reject keyword exceeding max length with 400 Bad Request', async () => {
       await expect(centre.search('a'.repeat(201))).rejects.toBeInstanceOf(BadRequestException);

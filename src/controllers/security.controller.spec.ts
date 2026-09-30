@@ -36,6 +36,6 @@ describe('SecurityController', () => {
       .expect(200)
       .expect({ accessToken: 'token' });
 
-    expect(auth).toHaveBeenCalledWith('0000');
+    expect(auth).toHaveBeenCalledWith('0000', expect.any(String));
   });
 });

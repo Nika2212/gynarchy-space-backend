@@ -28,6 +28,11 @@ const FLAG_DEFAULTS = {
   watchPositionAt: null,
 } as const;
 
+const FLAG_DATES = {
+  isLiked: 'likedAt',
+  isFavorite: 'favoritedAt',
+} as const;
+
 @Injectable()
 export class MediaRepository {
   constructor(
@@ -53,7 +58,7 @@ export class MediaRepository {
       .filter((row): row is MediaFlags => row !== undefined);
   }
 
-  // Loads one page of liked or favorited catalog rows, newest updates first.
+  // Loads one page of liked or favorited catalog rows, most recently flagged first.
   public async findByFlag(
     flag: 'isLiked' | 'isFavorite',
     page: number,
@@ -63,7 +68,7 @@ export class MediaRepository {
     const filter = { [flag]: true };
     const skip = (currentPage - 1) * PER_PAGE_SIZE;
     const [rows, total] = await Promise.all([
-      this.mediaModel.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(PER_PAGE_SIZE).exec(),
+      this.mediaModel.find(filter).sort({ [FLAG_DATES[flag]]: -1, updatedAt: -1 }).skip(skip).limit(PER_PAGE_SIZE).exec(),
       this.mediaModel.countDocuments(filter).exec(),
     ]);
 
@@ -151,13 +156,28 @@ export class MediaRepository {
     const existing = await this.mediaModel.findOne({ identifierHash }).exec();
 
     if (!existing) {
-      const created = await this.createMissing(identifier, secret, { [flag]: true });
+      const created = await this.createMissing(identifier, secret, {
+        [flag]: true,
+        ...this.flagDate(flag, true),
+      });
       return this.toFlags(created, secret)!;
     }
 
     existing[flag] = !existing[flag];
+    Object.assign(existing, this.flagDate(flag, existing[flag]));
     await existing.save();
     return this.toFlags(existing, secret)!;
+  }
+
+  // Returns the likedAt / favoritedAt change that goes with a flag flip.
+  private flagDate(
+    flag: 'isLiked' | 'isFavorite' | 'isHidden',
+    on: boolean,
+  ): Partial<MediaDocument> {
+    if (flag === 'isHidden') {
+      return {};
+    }
+    return { [FLAG_DATES[flag]]: on ? new Date() : null };
   }
 
   // Creates a catalog stub for a media id that has not been searched yet.

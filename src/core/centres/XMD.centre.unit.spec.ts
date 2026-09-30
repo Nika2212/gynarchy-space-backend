@@ -126,6 +126,17 @@ describe('XMDCentre (unit)', () => {
     await expect(centre.search('gynarchy')).resolves.toEqual([]);
   });
 
+  it('searches with an empty query for an empty or missing keyword', async () => {
+    const centre = new XMDCentre(config('https://x.test'));
+    http.get.mockResolvedValue({ data: SEARCH_HTML });
+
+    await expect(centre.search('   ')).resolves.toHaveLength(1);
+    expect(http.get).toHaveBeenLastCalledWith('/search/', expect.objectContaining({ params: expect.objectContaining({ q: '' }) }));
+
+    await expect(centre.search(undefined as unknown as string)).resolves.toHaveLength(1);
+    expect(http.get).toHaveBeenLastCalledWith('/search/', expect.objectContaining({ params: expect.objectContaining({ q: '' }) }));
+  });
+
   it('rethrows HttpExceptions from search and wraps other errors', async () => {
     const centre = new XMDCentre(config('https://x.test'));
     http.get.mockRejectedValueOnce(new BadRequestException('nope'));

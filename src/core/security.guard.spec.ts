@@ -1,5 +1,6 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { SecurityGuard } from './security.guard';
 
@@ -7,17 +8,31 @@ function contextWithAuth(authorization?: string): ExecutionContext {
   const request = { headers: { authorization }, user: undefined };
   return {
     switchToHttp: () => ({ getRequest: () => request }),
-  } as ExecutionContext;
+    getHandler: () => undefined,
+    getClass: () => undefined,
+  } as unknown as ExecutionContext;
 }
 
 describe('SecurityGuard', () => {
   const jwtService = { verifyAsync: jest.fn() };
   const configService = { get: jest.fn().mockReturnValue('secret') };
-  const guard = new SecurityGuard(jwtService as unknown as JwtService, configService as unknown as ConfigService);
+  const reflector = { getAllAndOverride: jest.fn() };
+  const guard = new SecurityGuard(
+    jwtService as unknown as JwtService,
+    configService as unknown as ConfigService,
+    reflector as unknown as Reflector,
+  );
 
   beforeEach(() => {
     jwtService.verifyAsync.mockReset();
     configService.get.mockReturnValue('secret');
+    reflector.getAllAndOverride.mockReturnValue(false);
+  });
+
+  it('lets a public route through without a token', async () => {
+    reflector.getAllAndOverride.mockReturnValue(true);
+    await expect(guard.canActivate(contextWithAuth())).resolves.toBe(true);
+    expect(jwtService.verifyAsync).not.toHaveBeenCalled();
   });
 
   it('throws when the Authorization header is missing or not Bearer', async () => {

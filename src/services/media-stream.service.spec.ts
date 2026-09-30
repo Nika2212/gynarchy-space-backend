@@ -24,7 +24,10 @@ function mockResponse(headersSent = false) {
 }
 
 describe('MediaStreamService', () => {
-  const xmdCentre = { getURL: jest.fn().mockResolvedValue('https://cdn.example.com/v.mp4') };
+  const xmdCentre = {
+    getURL: jest.fn().mockResolvedValue('https://cdn.example.com/v.mp4'),
+    isAllowedAssetURL: jest.fn().mockReturnValue(true),
+  };
   const service = new MediaStreamService(xmdCentre as unknown as XMDCentre);
   const originURL = 'https://xmegadrive.com/videos/1';
   const id = encryptURLToShortToken(originURL);
@@ -32,6 +35,22 @@ describe('MediaStreamService', () => {
   beforeEach(() => {
     mockedAxios.mockReset();
     xmdCentre.getURL.mockResolvedValue('https://cdn.example.com/v.mp4');
+    xmdCentre.isAllowedAssetURL.mockReturnValue(true);
+  });
+
+  it('rejects an id that points outside the XMD site', async () => {
+    xmdCentre.isAllowedAssetURL.mockReturnValue(false);
+    xmdCentre.getURL.mockClear();
+
+    await expect(service.stream(id, '', mockResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+    expect(xmdCentre.getURL).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resolved video URL on a private host', async () => {
+    xmdCentre.getURL.mockResolvedValue('http://127.0.0.1/v.mp4');
+
+    await expect(service.stream(id, '', mockResponse() as never)).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockedAxios).not.toHaveBeenCalled();
   });
 
   it('rejects a missing or invalid media id', async () => {

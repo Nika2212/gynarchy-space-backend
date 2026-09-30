@@ -59,9 +59,9 @@ describe('App (e2e)', () => {
     return request(app.getHttpServer()).get('/api/media').expect(401);
   });
 
-  it('GET /api/media without keyword returns 400', () => {
+  it('GET /api/media with a repeated keyword returns 400', () => {
     return request(app.getHttpServer())
-      .get('/api/media')
+      .get('/api/media?keyword=a&keyword=b')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(400);
   });

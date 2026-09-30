@@ -29,7 +29,6 @@ const KT_PLAYER_PATHS: string[] = [
 const URL_CACHE_LIMIT: number = 128;
 const JSDOM_CONCURRENCY: number = 4;
 const JSDOM_QUEUE_LIMIT: number = 8;
-const MIN_SEARCH_KEYWORD_LENGTH: number = 1;
 const MAX_SEARCH_KEYWORD_LENGTH: number = 200;
 const MIN_PAGE_NUMBER: number = 1;
 const MAX_PAGE_NUMBER: number = 1000;
@@ -110,9 +109,9 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
-  // Fetches one XMD search page and returns parsed media cards.
+  // Fetches one XMD search page and returns parsed media cards. An empty or missing keyword searches with an empty query.
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
-    const normalizedKeyword = typeof keyword === 'string' ? keyword.trim() : keyword;
+    const normalizedKeyword = keyword === undefined ? '' : typeof keyword === 'string' ? keyword.trim() : keyword;
     this.validateSearchInput(normalizedKeyword, page);
 
     try {
@@ -440,10 +439,10 @@ export class XMDCentre implements OnModuleDestroy {
     throw new XMDCentreException(`XMDCentre error in ${context}`, meta);
   }
 
-  // Rejects empty, too-long, or out-of-range search keyword and page values.
+  // Rejects non-string or too-long keywords and out-of-range pages. An empty keyword is allowed.
   private validateSearchInput(keyword: string, page: number): void {
-    if (typeof keyword !== 'string' || keyword.trim().length < MIN_SEARCH_KEYWORD_LENGTH) {
-      throw new BadRequestException(`Invalid keyword: must be a non-empty string (min length: ${MIN_SEARCH_KEYWORD_LENGTH})`);
+    if (typeof keyword !== 'string') {
+      throw new BadRequestException('Invalid keyword: must be a string');
     }
 
     if (keyword.length > MAX_SEARCH_KEYWORD_LENGTH) {

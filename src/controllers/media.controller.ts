@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Public } from '../core/public.decorator';
 import { SecurityGuard } from '../core/security.guard';
 import { WatchPositionDTO } from '../DTOs/watch-position.DTO';
 import { MediaStreamService } from '../services/media-stream.service';
@@ -43,8 +44,9 @@ export class MediaController {
   }
 
   @Get(':id')
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  // Streams the video for one media id.
+  @Public()
+  @Throttle({ default: { limit: 300, ttl: 60000 } })
+  // Streams the video for one media id. Public so a <video src> tag can play it.
   public async findOne(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
     const range = req.headers.range as string;

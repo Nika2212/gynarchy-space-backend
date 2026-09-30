@@ -40,6 +40,12 @@ export class MediaDocument {
   isHidden: boolean;
 
   @Prop({ type: Date, default: null })
+  likedAt: Date | null;
+
+  @Prop({ type: Date, default: null })
+  favoritedAt: Date | null;
+
+  @Prop({ type: Date, default: null })
   watchedAt: Date | null;
 
   @Prop({ required: true, default: 0 })
@@ -56,5 +62,5 @@ export type MediaModel = HydratedDocument<MediaDocument>;
 
 export const MediaSchema = SchemaFactory.createForClass(MediaDocument);
 
-MediaSchema.index({ isLiked: 1, updatedAt: -1 });
-MediaSchema.index({ isFavorite: 1, updatedAt: -1 });
+MediaSchema.index({ isLiked: 1, likedAt: -1, updatedAt: -1 });
+MediaSchema.index({ isFavorite: 1, favoritedAt: -1, updatedAt: -1 });

@@ -122,7 +122,9 @@ describe('MediaRepository', () => {
     });
 
     await expect(repository.toggleLike(id)).resolves.toMatchObject({ identifier: id, isLiked: true });
-    expect(create).toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ isLiked: true, likedAt: expect.any(Date) }),
+    );
   });
 
   it('creates from a non-decodable identifier and flips existing flags', async () => {
@@ -145,6 +147,24 @@ describe('MediaRepository', () => {
     });
     await expect(repository.toggleHidden('raw-id')).resolves.toMatchObject({ isHidden: true });
     expect(save).toHaveBeenCalled();
+  });
+
+  it('stamps likedAt when liking and clears it when unliking', async () => {
+    const row: Record<string, unknown> = {
+      identifier: encryptText('raw-id', SECRET),
+      isLiked: false,
+      isFavorite: false,
+      isHidden: false,
+      likedAt: null,
+      save: jest.fn(),
+    };
+    execFindOne.mockResolvedValue(row);
+
+    await repository.toggleLike('raw-id');
+    expect(row.likedAt).toEqual(expect.any(Date));
+
+    await repository.toggleLike('raw-id');
+    expect(row.likedAt).toBeNull();
   });
 
   it('creates a row when saving watch position for a missing media item', async () => {
@@ -238,7 +258,7 @@ describe('MediaRepository', () => {
       total: 2,
     });
     expect(find).toHaveBeenCalledWith({ isLiked: true });
-    expect(sort).toHaveBeenCalledWith({ updatedAt: -1 });
+    expect(sort).toHaveBeenCalledWith({ likedAt: -1, updatedAt: -1 });
     expect(skip).toHaveBeenCalledWith(24);
     expect(limit).toHaveBeenCalledWith(24);
   });

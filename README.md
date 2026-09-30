@@ -64,13 +64,13 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
 |---|---|
 | 400 | Missing/empty body or extra fields |
 | 401 | Wrong passcode |
-| 429 | More than 6 attempts / minute |
+| 429 | 5 wrong passcodes from one IP. That IP is then blocked for 1 hour, even with the right passcode. Correct logins are not counted |
 
 ### Search (JWT)
 
 `GET /api/media?keyword=...&page=1`
 
-`sort` and `filter` are ignored. Invalid `page` defaults to `1`.
+`keyword` may be empty or missing: the source's search page is then requested with an empty query. `sort` and `filter` are ignored. Invalid `page` defaults to `1`.
 
 **200**
 
@@ -104,7 +104,7 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
 
 | Status | When |
 |---|---|
-| 400 | Missing/invalid keyword |
+| 400 | Keyword is not a single string, or is longer than 200 characters |
 | 401 | No/invalid token |
 | 429 | More than 120 searches / minute |
 
@@ -121,24 +121,23 @@ Use as `<img src="{API_BASE}/images/{token}">`. Public on purpose.
 | 429 | More than 180 / minute |
 | 502 | Upstream image failed |
 
-### Watch (JWT)
+### Watch (no JWT)
 
 `GET /api/media/<identifier>`
 
 Supports `Range`. Response is `video/*` (or `video/mp4` when the origin sends `application/octet-stream`).
 
-**A `<video src>` tag cannot send Bearer.** Fetch the stream with `Authorization` (and `Range` if needed), then use a `blob:` URL or Media Source. Native `src="/api/media/..."` will 401.
+Use as `<video src="{API_BASE}/media/{identifier}">`. Public on purpose, like thumbnails, so the native player can stream and seek. Only ids that point at the XMD site are served.
 
 | Status | When |
 |---|---|
-| 401 | No/invalid token |
-| 404 | Bad id |
-| 429 | More than 20 watches / minute, or JSDOM queue full |
+| 404 | Bad id, or id outside the XMD site |
+| 429 | More than 300 stream requests / minute (each `Range` request counts), or JSDOM queue full |
 | 502 | Upstream stream failed |
 
 ### Liked / favorites lists (JWT)
 
-Same response shape as search. `page` defaults to `1`. 24 items per page, newest updates first.
+Same response shape as search. `page` defaults to `1`. 24 items per page, most recently liked / favorited first.
 
 `GET /api/media/liked?page=1`  
 `GET /api/media/favorites?page=1`

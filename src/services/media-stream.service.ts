@@ -2,6 +2,7 @@ import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '
 import axios from 'axios';
 import type { Response } from 'express';
 import { XMDCentre } from '../core/centres/XMD.centre';
+import { isPublicHTTPHost } from '../shared/image-type';
 import { decryptShortTokenToURL } from '../shared/url-token';
 
 @Injectable()
@@ -19,6 +20,10 @@ export class MediaStreamService {
       throw new NotFoundException('Invalid media id');
     }
 
+    if (!this.xmdCentre.isAllowedAssetURL(originURL)) {
+      throw new NotFoundException('Invalid media id');
+    }
+
     const decryptedURL = await this.xmdCentre.getURL(originURL);
     const abort = new AbortController();
     // Stops the remote fetch when the client closes the response.
@@ -26,6 +31,10 @@ export class MediaStreamService {
     response.once('close', onClose);
 
     try {
+      if (!isPublicHTTPHost(new URL(decryptedURL).hostname)) {
+        throw new BadRequestException('Invalid media url');
+      }
+
       const remoteResponse = await axios({
         method: 'GET',
         url: decryptedURL,
