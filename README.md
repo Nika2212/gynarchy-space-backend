@@ -115,7 +115,7 @@ Use as `<img src="{API_BASE}/images/{token}">`. Public on purpose.
 |---|---|
 | 400 | Host/type not allowed |
 | 404 | Bad token |
-| 429 | More than 180 / minute |
+| 429 | More than 1200 / minute |
 | 502 | Upstream image failed |
 
 ### Watch (no JWT)

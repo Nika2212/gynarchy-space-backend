@@ -25,7 +25,8 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: origins,
     credentials: false,
-    exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
+    // Retry-After lets the app wait out a 429 before asking again.
+    exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length', 'Retry-After'],
   });
   app.use(
     helmet({

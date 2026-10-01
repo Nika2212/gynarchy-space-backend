@@ -4,7 +4,8 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ImageProxyService } from '../services/image-proxy.service';
 
 @UseGuards(ThrottlerGuard)
-@Throttle({ default: { limit: 180, ttl: 60000 } })
+// A feed card shows up to 5 thumbnails and fast scrolling passes many cards, so the limit is high; browsers cache each image for a day.
+@Throttle({ default: { limit: 1200, ttl: 60000 } })
 @Controller('images')
 export class ImagesController {
   constructor(private readonly imageProxyService: ImageProxyService) {}

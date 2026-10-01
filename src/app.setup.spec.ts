@@ -30,7 +30,7 @@ describe('configureApp', () => {
     expect(raw.enableCors).toHaveBeenCalledWith({
       origin: ['http://localhost:4200'],
       credentials: false,
-      exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
+      exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length', 'Retry-After'],
     });
     expect(raw.useGlobalPipes).toHaveBeenCalled();
   });
