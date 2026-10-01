@@ -186,7 +186,7 @@ describe('XMDCentre (integration)', () => {
           expect(item.title.length).toBeGreaterThan(0);
           expect(item.url.length).toBeGreaterThan(0);
           expect(item.duration).toBeGreaterThanOrEqual(0);
-          expect(item.thumbnailSrc).toHaveLength(6);
+          expect(item.thumbnailSrc).toHaveLength(5);
           item.thumbnailSrc.forEach((src) => {
             expect(typeof src).toBe('string');
             expect(src.length).toBeGreaterThan(0);

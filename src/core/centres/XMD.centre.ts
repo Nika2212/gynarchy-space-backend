@@ -32,6 +32,8 @@ const JSDOM_QUEUE_LIMIT: number = 8;
 const MAX_SEARCH_KEYWORD_LENGTH: number = 200;
 const MIN_PAGE_NUMBER: number = 1;
 const MAX_PAGE_NUMBER: number = 1000;
+// The listing has screenshots 1-5; a 6th does not exist (404), so it is never requested.
+const SCREENSHOT_COUNT: number = 5;
 
 class XMDCentreException extends InternalServerErrorException {
   // Builds an XMD error with an optional debug payload.
@@ -241,9 +243,9 @@ export class XMDCentre implements OnModuleDestroy {
     }
   }
 
-  // Builds the six sequential screenshot URLs from one thumbnail path.
+  // Builds the sequential screenshot URLs (1.jpg to 5.jpg) from one thumbnail path.
   private expandScreenshots(url: string): string[] {
-    return Array.from({ length: 6 }, (_, i) => url.replace(/\/\d+\.jpg$/, `/${i + 1}.jpg`));
+    return Array.from({ length: SCREENSHOT_COUNT }, (_, i) => url.replace(/\/\d+\.jpg$/, `/${i + 1}.jpg`));
   }
 
   // Runs kt_player against page flashvars and returns the video URL.

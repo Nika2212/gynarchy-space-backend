@@ -117,7 +117,7 @@ describe('XMDCentre (unit)', () => {
     const results = await centre.search('gynarchy');
     expect(results).toHaveLength(1);
     expect(results[0].title).toBe('Title');
-    expect(results[0].thumbnailSrc).toHaveLength(6);
+    expect(results[0].thumbnailSrc).toHaveLength(5);
     expect(results[0].url).toMatch(/^\/media\//);
 
     jest.spyOn(urlToken, 'encryptURLToShortToken').mockImplementation(() => {
