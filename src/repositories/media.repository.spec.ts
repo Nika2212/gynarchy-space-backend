@@ -1,36 +1,57 @@
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { encryptText } from '../shared/field-crypto';
+import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
+import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { encryptURLToShortToken } from '../shared/url-token';
 import { MediaRepository } from './media.repository';
 import { MediaDocument } from './media.schema';
 
 const SECRET = 'jwt-secret';
 
+const SNAPSHOT: IMediaSnapshot = {
+  title: 'Title',
+  duration: 61_000,
+  postedAt: '2 days ago',
+  thumbnailSrc: ['/images/a', '/images/b'],
+};
+
+function storedRow(identifier: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    identifier: encryptText(identifier, SECRET),
+    title: encryptText('Stored', SECRET),
+    description: encryptText('', SECRET),
+    postedAt: encryptText('', SECRET),
+    thumbnailSrc: encryptText('[]', SECRET),
+    duration: 0,
+    isLiked: false,
+    isFavorite: false,
+    isDownloaded: false,
+    watchedAt: null,
+    watchedTimes: 0,
+    watchPositionAt: null,
+    save: jest.fn(),
+    ...overrides,
+  };
+}
+
 describe('MediaRepository', () => {
   let repository: MediaRepository;
   const execFind = jest.fn();
-  const execFindFlagged = jest.fn();
-  const execCount = jest.fn();
   const execFindOne = jest.fn();
-  const create = jest.fn();
-  const bulkWrite = jest.fn();
-  const select = jest.fn(() => ({ exec: execFind }));
-  const limit = jest.fn(() => ({ exec: execFindFlagged }));
-  const skip = jest.fn(() => ({ limit }));
-  const sort = jest.fn(() => ({ skip }));
-  const find = jest.fn(() => ({ select, sort }));
+  const execDelete = jest.fn();
+  const sort = jest.fn(() => ({ exec: execFind }));
+  const find = jest.fn(() => ({ sort }));
   const findOne = jest.fn(() => ({ exec: execFindOne }));
-  const countDocuments = jest.fn(() => ({ exec: execCount }));
+  const deleteOne = jest.fn(() => ({ exec: execDelete }));
+  const create = jest.fn();
 
   beforeEach(async () => {
+    [execFind, execFindOne, execDelete, sort, find, findOne, deleteOne, create].forEach((mock) => mock.mockClear());
     execFind.mockReset();
-    execFindFlagged.mockReset();
-    execCount.mockReset();
     execFindOne.mockReset();
     create.mockReset();
-    bulkWrite.mockReset();
+    create.mockImplementation(async (doc: Record<string, unknown>) => doc);
 
     const module = await Test.createTestingModule({
       providers: [
@@ -38,7 +59,7 @@ describe('MediaRepository', () => {
         { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
         {
           provide: getModelToken(MediaDocument.name),
-          useValue: { find, findOne, create, bulkWrite, countDocuments },
+          useValue: { find, findOne, deleteOne, create },
         },
       ],
     }).compile();
@@ -46,269 +67,130 @@ describe('MediaRepository', () => {
     repository = module.get(MediaRepository);
   });
 
-  it('returns no flags when the identifier list is empty', async () => {
-    await expect(repository.findByIdentifiers([])).resolves.toEqual([]);
-    expect(find).not.toHaveBeenCalled();
-  });
-
-  it('decrypts matching rows and skips corrupt identifiers', async () => {
-    const identifier = 'abc';
+  it('loads the library with flags, skips corrupt rows, and parses thumbnails', async () => {
     execFind.mockResolvedValue([
-      {
-        identifier: encryptText(identifier, SECRET),
+      storedRow('a', {
         isLiked: true,
-        isFavorite: false,
-        isHidden: true,
-      },
-      {
-        identifier: 'not-cipher',
-        isLiked: false,
-        isFavorite: false,
-        isHidden: false,
-      },
+        isDownloaded: undefined,
+        thumbnailSrc: encryptText('["/images/a"]', SECRET),
+        watchedAt: new Date('2026-01-01'),
+        watchPositionAt: 5_000,
+        watchedTimes: undefined,
+        duration: undefined,
+      }),
+      storedRow('b', { thumbnailSrc: encryptText('{"not":"array"}', SECRET), title: 'corrupt', description: 'corrupt', postedAt: 'corrupt' }),
+      storedRow('c', { thumbnailSrc: encryptText('not json', SECRET) }),
+      storedRow('d', { thumbnailSrc: '' }),
+      storedRow('e', { identifier: 'corrupt' }),
     ]);
 
-    await expect(repository.findByIdentifiers([identifier])).resolves.toEqual([
-      {
-        identifier,
-        isLiked: true,
-        isFavorite: false,
-        isHidden: true,
-        watchedAt: null,
-        watchedTimes: 0,
-        watchPositionAt: null,
-      },
-    ]);
+    const library = await repository.findLibrary();
+
+    expect(find).toHaveBeenCalledWith({
+      $or: [{ isLiked: true }, { isFavorite: true }, { isDownloaded: true }, { watchPositionAt: { $ne: null } }],
+    });
+    expect(sort).toHaveBeenCalledWith({ updatedAt: -1 });
+    expect(library.map((media) => media.identifier)).toEqual(['a', 'b', 'c', 'd']);
+    expect(library[0]).toMatchObject({
+      url: '/media/a',
+      title: 'Stored',
+      thumbnailSrc: ['/images/a'],
+      isLiked: true,
+      isDownloaded: false,
+      watchPositionAt: 5_000,
+      watchedTimes: 0,
+      duration: 0,
+    });
+    expect(library[1]).toMatchObject({ title: '', description: '', postedAt: '', thumbnailSrc: [], watchedAt: undefined, watchPositionAt: undefined });
+    expect(library[2].thumbnailSrc).toEqual([]);
+    expect(library[3].thumbnailSrc).toEqual([]);
   });
 
-  it('skips upsert when no media has an identifier', async () => {
-    await repository.upsertFromSearch([{ title: 'x', url: '/x', thumbnailSrc: [], description: '', postedAt: '', duration: 1 }]);
-    expect(bulkWrite).not.toHaveBeenCalled();
-  });
-
-  it('bulk-upserts catalog fields including optional blanks', async () => {
-    await repository.upsertFromSearch([
-      {
-        identifier: 'id-1',
-        title: 't',
-        url: '/u',
-        thumbnailSrc: ['a'],
-        description: 'd',
-        postedAt: 'now',
-        duration: 9,
-      },
-      {
-        identifier: 'id-2',
-        title: 't2',
-        url: '/u2',
-      } as never,
-    ]);
-
-    expect(bulkWrite).toHaveBeenCalledWith(expect.any(Array), { ordered: false });
-    expect(bulkWrite.mock.calls[0][0]).toHaveLength(2);
-  });
-
-  it('creates a row when toggling a missing media item', async () => {
+  it('creates a liked row with the card when the media is new', async () => {
     const id = encryptURLToShortToken('https://example.com/v');
     execFindOne.mockResolvedValue(null);
-    create.mockResolvedValue({
-      identifier: encryptText(id, SECRET),
-      isLiked: true,
-      isFavorite: false,
-      isHidden: false,
-      watchedAt: null,
-      watchedTimes: 0,
-      watchPositionAt: null,
-    });
 
-    await expect(repository.toggleLike(id)).resolves.toMatchObject({ identifier: id, isLiked: true });
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ isLiked: true, likedAt: expect.any(Date) }),
-    );
+    await expect(repository.toggleLike(id, SNAPSHOT)).resolves.toMatchObject({ identifier: id, isLiked: true, isFavorite: false });
+
+    const stored = create.mock.calls[0][0];
+    expect(stored).toMatchObject({ identifierHash: hashIdentifier(id, SECRET), isLiked: true, likedAt: expect.any(Date), duration: 61_000 });
+    expect(tryDecryptText(stored.title, SECRET)).toBe('Title');
+    expect(tryDecryptText(stored.url, SECRET)).toBe('https://example.com/v');
+    expect(JSON.parse(tryDecryptText(stored.thumbnailSrc, SECRET) as string)).toEqual(['/images/a', '/images/b']);
   });
 
-  it('creates from a non-decodable identifier and flips existing flags', async () => {
-    execFindOne.mockResolvedValueOnce(null);
-    create.mockResolvedValue({
-      identifier: encryptText('raw-id', SECRET),
-      isLiked: false,
-      isFavorite: true,
-      isHidden: false,
-    });
-    await repository.toggleFavorite('raw-id');
+  it('falls back to a media path when the identifier is not a URL token', async () => {
+    execFindOne.mockResolvedValue(null);
 
-    const save = jest.fn();
-    execFindOne.mockResolvedValue({
-      isHidden: false,
-      identifier: encryptText('raw-id', SECRET),
-      isLiked: false,
-      isFavorite: false,
-      save,
-    });
-    await expect(repository.toggleHidden('raw-id')).resolves.toMatchObject({ isHidden: true });
-    expect(save).toHaveBeenCalled();
+    await repository.toggleFavorite('raw-id', SNAPSHOT);
+
+    expect(tryDecryptText(create.mock.calls[0][0].url, SECRET)).toBe('/media/raw-id');
+    expect(create.mock.calls[0][0]).toMatchObject({ isFavorite: true, favoritedAt: expect.any(Date) });
   });
 
-  it('stamps likedAt when liking and clears it when unliking', async () => {
-    const row: Record<string, unknown> = {
-      identifier: encryptText('raw-id', SECRET),
-      isLiked: false,
-      isFavorite: false,
-      isHidden: false,
-      likedAt: null,
-      save: jest.fn(),
-    };
+  it('flips a flag on an existing row, refreshes its card, and keeps it while something is left', async () => {
+    const row = storedRow('raw-id', { isLiked: false, isFavorite: true });
     execFindOne.mockResolvedValue(row);
 
-    await repository.toggleLike('raw-id');
-    expect(row.likedAt).toEqual(expect.any(Date));
+    await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toMatchObject({ isLiked: true, isFavorite: true });
 
-    await repository.toggleLike('raw-id');
-    expect(row.likedAt).toBeNull();
+    expect(row.likedAt).toEqual(expect.any(Date));
+    expect(tryDecryptText(row.title as string, SECRET)).toBe('Title');
+    expect(row.save).toHaveBeenCalled();
+    expect(deleteOne).not.toHaveBeenCalled();
   });
 
-  it('creates a row when saving watch position for a missing media item', async () => {
+  it('deletes the row once no flag or watch progress is left', async () => {
+    const row = storedRow('raw-id', { isLiked: true });
+    execFindOne.mockResolvedValue(row);
+
+    await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toMatchObject({ identifier: 'raw-id', isLiked: false });
+
+    expect(row.likedAt).toBeNull();
+    expect(deleteOne).toHaveBeenCalledWith({ identifierHash: hashIdentifier('raw-id', SECRET) });
+    expect(row.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unflagged row that still has watch progress or is downloaded', async () => {
+    const watched = storedRow('w', { isFavorite: true, watchPositionAt: 1_000 });
+    execFindOne.mockResolvedValueOnce(watched);
+    await repository.toggleFavorite('w', SNAPSHOT);
+    expect(watched.save).toHaveBeenCalled();
+
+    const downloaded = storedRow('d', { isLiked: true, isDownloaded: true });
+    execFindOne.mockResolvedValueOnce(downloaded);
+    await repository.toggleLike('d', SNAPSHOT);
+    expect(downloaded.save).toHaveBeenCalled();
+    expect(deleteOne).not.toHaveBeenCalled();
+  });
+
+  it('creates a row when saving watch position for a new media', async () => {
     const id = encryptURLToShortToken('https://example.com/v');
     execFindOne.mockResolvedValue(null);
-    create.mockResolvedValue({
-      identifier: encryptText(id, SECRET),
-      isLiked: false,
-      isFavorite: false,
-      isHidden: false,
-      watchedAt: new Date('2026-01-01'),
-      watchedTimes: 0,
-      watchPositionAt: 15_000,
-    });
 
-    await expect(repository.saveWatchPosition(id, 15_000)).resolves.toMatchObject({
-      identifier: id,
-      watchPositionAt: 15_000,
-    });
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        watchPositionAt: 15_000,
-        watchedAt: expect.any(Date),
-      }),
-    );
+    await expect(repository.saveWatchPosition(id, 15_000, SNAPSHOT)).resolves.toMatchObject({ identifier: id, watchPositionAt: 15_000, watchedAt: expect.any(Date) });
+    expect(create.mock.calls[0][0]).toMatchObject({ watchPositionAt: 15_000, isLiked: false });
   });
 
-  it('updates watch position and watchedAt on an existing media item', async () => {
-    const save = jest.fn();
-    execFindOne.mockResolvedValue({
-      identifier: encryptText('raw-id', SECRET),
-      isLiked: false,
-      isFavorite: false,
-      isHidden: false,
-      watchedAt: null,
-      watchedTimes: 0,
-      watchPositionAt: null,
-      save,
-    });
+  it('updates watch position, watched time, and card on an existing row', async () => {
+    const row = storedRow('raw-id', { isDownloaded: undefined, watchedTimes: undefined, watchedAt: undefined, watchPositionAt: undefined });
+    execFindOne.mockResolvedValue(row);
 
-    await expect(repository.saveWatchPosition('raw-id', 4_500)).resolves.toMatchObject({
+    await expect(repository.saveWatchPosition('raw-id', 4_500, SNAPSHOT)).resolves.toMatchObject({
       identifier: 'raw-id',
+      isDownloaded: false,
+      watchedTimes: 0,
       watchPositionAt: 4_500,
       watchedAt: expect.any(Date),
     });
-    expect(save).toHaveBeenCalled();
+    expect(tryDecryptText(row.postedAt as string, SECRET)).toBe('2 days ago');
+    expect(row.save).toHaveBeenCalled();
   });
 
-  it('decrypts flagged catalog rows and skips corrupt identifiers', async () => {
-    const identifier = encryptURLToShortToken('https://example.com/v');
-    execFindFlagged.mockResolvedValue([
-      {
-        identifier: encryptText(identifier, SECRET),
-        title: encryptText('Title', SECRET),
-        description: encryptText('Desc', SECRET),
-        postedAt: encryptText('now', SECRET),
-        thumbnailSrc: encryptText(JSON.stringify(['/images/a']), SECRET),
-        duration: 9,
-        isLiked: true,
-        isFavorite: false,
-        isHidden: false,
-        watchedAt: new Date('2026-01-01'),
-        watchedTimes: 2,
-        watchPositionAt: 100,
-      },
-      {
-        identifier: 'not-cipher',
-        isLiked: true,
-      },
-    ]);
-    execCount.mockResolvedValue(2);
+  it('returns undefined flags for a stored row whose identifier cannot be decrypted', async () => {
+    create.mockImplementation(async (doc: Record<string, unknown>) => ({ ...doc, identifier: 'corrupt' }));
+    execFindOne.mockResolvedValue(null);
 
-    await expect(repository.findByFlag('isLiked', 2)).resolves.toEqual({
-      medias: [
-        {
-          identifier,
-          url: `/media/${identifier}`,
-          title: 'Title',
-          description: 'Desc',
-          postedAt: 'now',
-          duration: 9,
-          thumbnailSrc: ['/images/a'],
-          isLiked: true,
-          isFavorite: false,
-          isHidden: false,
-          watchedAt: new Date('2026-01-01'),
-          watchedTimes: 2,
-          watchPositionAt: 100,
-        },
-      ],
-      total: 2,
-    });
-    expect(find).toHaveBeenCalledWith({ isLiked: true });
-    expect(sort).toHaveBeenCalledWith({ likedAt: -1, updatedAt: -1 });
-    expect(skip).toHaveBeenCalledWith(24);
-    expect(limit).toHaveBeenCalledWith(24);
-  });
-
-  it('defaults catalog blanks and treats invalid thumbnail payloads as empty', async () => {
-    const identifier = 'id-1';
-    execFindFlagged.mockResolvedValue([
-      {
-        identifier: encryptText(identifier, SECRET),
-        title: 'not-cipher',
-        description: 'not-cipher',
-        postedAt: 'not-cipher',
-        thumbnailSrc: 'not-cipher',
-        isLiked: false,
-        isFavorite: true,
-        isHidden: false,
-      },
-      {
-        identifier: encryptText('id-2', SECRET),
-        title: encryptText('t', SECRET),
-        thumbnailSrc: encryptText('not-json', SECRET),
-        isLiked: false,
-        isFavorite: true,
-        isHidden: false,
-      },
-      {
-        identifier: encryptText('id-3', SECRET),
-        title: encryptText('t', SECRET),
-        thumbnailSrc: encryptText(JSON.stringify([1, 2]), SECRET),
-        isLiked: false,
-        isFavorite: true,
-        isHidden: false,
-      },
-    ]);
-    execCount.mockResolvedValue(3);
-
-    const out = await repository.findByFlag('isFavorite', 1);
-
-    expect(out.total).toBe(3);
-    expect(out.medias[0]).toMatchObject({
-      identifier,
-      title: '',
-      description: '',
-      postedAt: '',
-      duration: 0,
-      thumbnailSrc: [],
-      watchedTimes: 0,
-    });
-    expect(out.medias[1].thumbnailSrc).toEqual([]);
-    expect(out.medias[2].thumbnailSrc).toEqual([]);
-    expect(find).toHaveBeenCalledWith({ isFavorite: true });
+    await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toBeUndefined();
   });
 });

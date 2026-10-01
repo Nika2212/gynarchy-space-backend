@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
-import { parsePage, PER_PAGE_SIZE } from '../shared/paging';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
+import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { MediaDocument } from './media.schema';
 
 export type MediaFlags = Pick<
@@ -13,16 +13,18 @@ export type MediaFlags = Pick<
   | 'identifier'
   | 'isLiked'
   | 'isFavorite'
-  | 'isHidden'
+  | 'isDownloaded'
   | 'watchedAt'
   | 'watchedTimes'
   | 'watchPositionAt'
 >;
 
+type MediaFlag = 'isLiked' | 'isFavorite';
+
 const FLAG_DEFAULTS = {
   isLiked: false,
   isFavorite: false,
-  isHidden: false,
+  isDownloaded: false,
   watchedTimes: 0,
   watchedAt: null,
   watchPositionAt: null,
@@ -33,6 +35,11 @@ const FLAG_DATES = {
   isFavorite: 'favoritedAt',
 } as const;
 
+// Rows the user still cares about. Older rows saved by searches (no flags, no progress) are left out.
+const LIBRARY_FILTER = {
+  $or: [{ isLiked: true }, { isFavorite: true }, { isDownloaded: true }, { watchPositionAt: { $ne: null } }],
+};
+
 @Injectable()
 export class MediaRepository {
   constructor(
@@ -40,190 +47,97 @@ export class MediaRepository {
     private readonly configService: ConfigService,
   ) {}
 
-  // Loads like, favorite, hidden, and watch flags for the given identifiers.
-  public async findByIdentifiers(identifiers: readonly string[]): Promise<MediaFlags[]> {
-    if (identifiers.length === 0) {
-      return [];
-    }
-
+  // Loads every stored media with its flags, most recently changed first.
+  public async findLibrary(): Promise<IMediaInfo[]> {
     const secret = this.secret();
-    const hashes = identifiers.map((identifier) => hashIdentifier(identifier, secret));
-    const rows = await this.mediaModel
-      .find({ identifierHash: { $in: hashes } })
-      .select('identifier isLiked isFavorite isHidden watchedAt watchedTimes watchPositionAt')
-      .exec();
+    const rows = await this.mediaModel.find(LIBRARY_FILTER).sort({ updatedAt: -1 }).exec();
 
     return rows
-      .map((row) => this.toFlags(row, secret))
-      .filter((row): row is MediaFlags => row !== undefined);
-  }
-
-  // Loads one page of liked or favorited catalog rows, most recently flagged first.
-  public async findByFlag(
-    flag: 'isLiked' | 'isFavorite',
-    page: number,
-  ): Promise<{ medias: IMediaInfo[]; total: number }> {
-    const secret = this.secret();
-    const currentPage = parsePage(page);
-    const filter = { [flag]: true };
-    const skip = (currentPage - 1) * PER_PAGE_SIZE;
-    const [rows, total] = await Promise.all([
-      this.mediaModel.find(filter).sort({ [FLAG_DATES[flag]]: -1, updatedAt: -1 }).skip(skip).limit(PER_PAGE_SIZE).exec(),
-      this.mediaModel.countDocuments(filter).exec(),
-    ]);
-
-    return {
-      medias: rows
-        .map((row) => this.toMediaInfo(row, secret))
-        .filter((media): media is IMediaInfo => media !== undefined),
-      total,
-    };
-  }
-
-  // Saves or refreshes catalog fields from a search, without overwriting user flags.
-  public async upsertFromSearch(medias: readonly IMediaInfo[]): Promise<void> {
-    const secret = this.secret();
-    const ops = medias
-      .filter((media): media is IMediaInfo & { identifier: string } => Boolean(media.identifier))
-      .map((media) => {
-        const catalog = this.encryptCatalog(media, secret);
-        return {
-          updateOne: {
-            filter: { identifierHash: hashIdentifier(media.identifier, secret) },
-            update: {
-              $set: {
-                ...catalog,
-                lastSeenAt: new Date(),
-              },
-              $setOnInsert: { ...FLAG_DEFAULTS },
-            },
-            upsert: true,
-          },
-        };
-      });
-
-    if (ops.length === 0) {
-      return;
-    }
-
-    await this.mediaModel.bulkWrite(ops, { ordered: false });
+      .map((row) => this.toMediaInfo(row, secret))
+      .filter((media): media is IMediaInfo => media !== undefined);
   }
 
   // Flips the liked flag for one media item.
-  public async toggleLike(identifier: string): Promise<MediaFlags> {
-    return this.toggleFlag(identifier, 'isLiked');
+  public async toggleLike(identifier: string, media: IMediaSnapshot): Promise<MediaFlags> {
+    return this.toggleFlag(identifier, 'isLiked', media);
   }
 
   // Flips the favorite flag for one media item.
-  public async toggleFavorite(identifier: string): Promise<MediaFlags> {
-    return this.toggleFlag(identifier, 'isFavorite');
-  }
-
-  // Flips the hidden flag for one media item.
-  public async toggleHidden(identifier: string): Promise<MediaFlags> {
-    return this.toggleFlag(identifier, 'isHidden');
+  public async toggleFavorite(identifier: string, media: IMediaSnapshot): Promise<MediaFlags> {
+    return this.toggleFlag(identifier, 'isFavorite', media);
   }
 
   // Writes the playback position and last-watched time for one media item.
-  public async saveWatchPosition(identifier: string, watchPositionAt: number): Promise<MediaFlags> {
+  public async saveWatchPosition(identifier: string, watchPositionAt: number, media: IMediaSnapshot): Promise<MediaFlags> {
     const secret = this.secret();
     const identifierHash = hashIdentifier(identifier, secret);
     const existing = await this.mediaModel.findOne({ identifierHash }).exec();
     const watchedAt = new Date();
 
     if (!existing) {
-      const created = await this.createMissing(identifier, secret, {
-        watchPositionAt,
-        watchedAt,
-        lastSeenAt: watchedAt,
-      });
+      const created = await this.create(identifier, media, secret, { watchPositionAt, watchedAt });
       return this.toFlags(created, secret)!;
     }
 
-    existing.watchPositionAt = watchPositionAt;
-    existing.watchedAt = watchedAt;
+    Object.assign(existing, this.encryptCatalog(identifier, media, secret), { watchPositionAt, watchedAt });
     await existing.save();
     return this.toFlags(existing, secret)!;
   }
 
-  // Creates the media row if needed, then flips the named boolean flag.
-  private async toggleFlag(
-    identifier: string,
-    flag: 'isLiked' | 'isFavorite' | 'isHidden',
-  ): Promise<MediaFlags> {
+  // Creates the row if needed and flips the flag. Refreshes the stored card, and deletes the row once nothing is left on it.
+  private async toggleFlag(identifier: string, flag: MediaFlag, media: IMediaSnapshot): Promise<MediaFlags> {
     const secret = this.secret();
     const identifierHash = hashIdentifier(identifier, secret);
     const existing = await this.mediaModel.findOne({ identifierHash }).exec();
 
     if (!existing) {
-      const created = await this.createMissing(identifier, secret, {
-        [flag]: true,
-        ...this.flagDate(flag, true),
-      });
+      const created = await this.create(identifier, media, secret, { [flag]: true, [FLAG_DATES[flag]]: new Date() });
       return this.toFlags(created, secret)!;
     }
 
-    existing[flag] = !existing[flag];
-    Object.assign(existing, this.flagDate(flag, existing[flag]));
-    await existing.save();
+    const isOn = !existing[flag];
+
+    Object.assign(existing, this.encryptCatalog(identifier, media, secret), { [flag]: isOn, [FLAG_DATES[flag]]: isOn ? new Date() : null });
+
+    if (this.isUnused(existing)) {
+      await this.mediaModel.deleteOne({ identifierHash }).exec();
+    } else {
+      await existing.save();
+    }
+
     return this.toFlags(existing, secret)!;
   }
 
-  // Returns the likedAt / favoritedAt change that goes with a flag flip.
-  private flagDate(
-    flag: 'isLiked' | 'isFavorite' | 'isHidden',
-    on: boolean,
-  ): Partial<MediaDocument> {
-    if (flag === 'isHidden') {
-      return {};
-    }
-    return { [FLAG_DATES[flag]]: on ? new Date() : null };
+  // True when no flag or watch progress is left, so the row no longer needs to exist.
+  private isUnused(row: MediaDocument): boolean {
+    return !row.isLiked && !row.isFavorite && !row.isDownloaded && row.watchPositionAt === null;
   }
 
-  // Creates a catalog stub for a media id that has not been searched yet.
-  private async createMissing(
-    identifier: string,
-    secret: string,
-    extras: Partial<MediaDocument>,
-  ): Promise<MediaDocument> {
+  // Stores a new row with the encrypted card and the given starting values.
+  private async create(identifier: string, media: IMediaSnapshot, secret: string, extras: Partial<MediaDocument>): Promise<MediaDocument> {
     return this.mediaModel.create({
       identifierHash: hashIdentifier(identifier, secret),
-      ...this.encryptCatalog(
-        {
-          identifier,
-          url: decryptShortTokenToURL(identifier) ?? `/media/${identifier}`,
-          title: '',
-          description: '',
-          thumbnailSrc: [],
-          postedAt: '',
-          duration: 0,
-        },
-        secret,
-      ),
+      ...this.encryptCatalog(identifier, media, secret),
       ...FLAG_DEFAULTS,
-      lastSeenAt: new Date(),
       ...extras,
     });
   }
 
-  // Encrypts catalog text and URL fields before they are stored.
-  private encryptCatalog(
-    media: Pick<IMediaInfo, 'identifier' | 'url' | 'title' | 'description' | 'thumbnailSrc' | 'postedAt' | 'duration'>,
-    secret: string,
-  ) {
+  // Encrypts the card fields before they are stored.
+  private encryptCatalog(identifier: string, media: IMediaSnapshot, secret: string) {
     return {
-      identifier: encryptText(media.identifier ?? '', secret),
-      url: encryptText(media.url, secret),
+      identifier: encryptText(identifier, secret),
+      url: encryptText(decryptShortTokenToURL(identifier) ?? `/media/${identifier}`, secret),
       title: encryptText(media.title, secret),
-      description: encryptText(media.description ?? '', secret),
-      thumbnailSrc: encryptText(JSON.stringify(media.thumbnailSrc ?? []), secret),
-      postedAt: encryptText(media.postedAt ?? '', secret),
-      duration: media.duration ?? 0,
+      description: encryptText('', secret),
+      thumbnailSrc: encryptText(JSON.stringify(media.thumbnailSrc), secret),
+      postedAt: encryptText(media.postedAt, secret),
+      duration: media.duration,
       source: 'xmd',
     };
   }
 
-  // Decrypts catalog fields into the public media card shape.
+  // Decrypts a stored row into the public media card shape with its flags.
   private toMediaInfo(row: MediaDocument, secret: string): IMediaInfo | undefined {
     const identifier = tryDecryptText(row.identifier, secret);
     if (!identifier) {
@@ -240,7 +154,7 @@ export class MediaRepository {
       thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(row.thumbnailSrc, secret)),
       isLiked: row.isLiked,
       isFavorite: row.isFavorite,
-      isHidden: row.isHidden,
+      isDownloaded: row.isDownloaded ?? false,
       watchedAt: row.watchedAt ?? undefined,
       watchedTimes: row.watchedTimes ?? 0,
       watchPositionAt: row.watchPositionAt ?? undefined,
@@ -276,7 +190,7 @@ export class MediaRepository {
       identifier,
       isLiked: row.isLiked,
       isFavorite: row.isFavorite,
-      isHidden: row.isHidden,
+      isDownloaded: row.isDownloaded ?? false,
       watchedAt: row.watchedAt ?? null,
       watchedTimes: row.watchedTimes ?? 0,
       watchPositionAt: row.watchPositionAt ?? null,

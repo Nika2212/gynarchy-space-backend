@@ -3,11 +3,13 @@ import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../core/public.decorator';
 import { SecurityGuard } from '../core/security.guard';
+import { MediaFlagDTO } from '../DTOs/media-flag.DTO';
 import { WatchPositionDTO } from '../DTOs/watch-position.DTO';
 import { MediaStreamService } from '../services/media-stream.service';
 import { MediaService } from '../services/media.service';
 import { parsePage } from '../shared/paging';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
+import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
 
 @UseGuards(ThrottlerGuard, SecurityGuard)
@@ -29,17 +31,10 @@ export class MediaController {
     res.status(200).json(payload);
   }
 
-  @Get('liked')
-  // Returns a page of media items the user has liked.
-  public async findLiked(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload: IMediaContainer = await this.mediaService.findLiked(parsePage(req.query.page));
-    res.status(200).json(payload);
-  }
-
-  @Get('favorites')
-  // Returns a page of media items the user has favorited.
-  public async findFavorites(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload: IMediaContainer = await this.mediaService.findFavorites(parsePage(req.query.page));
+  @Get('library')
+  // Returns every media the user has liked, favorited, downloaded, or started watching.
+  public async findLibrary(@Res() res: Response): Promise<void> {
+    const payload: IMediaLibrary = await this.mediaService.findLibrary();
     res.status(200).json(payload);
   }
 
@@ -62,29 +57,22 @@ export class MediaController {
     res.status(200).json({ message: `This action downloads media #${id}` });
   }
 
-  @Get(':id/favorite')
-  // Toggles the favorite flag for one media item.
-  public async favorite(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload = await this.mediaService.toggleFavorite(req.params.id as string);
+  @Patch(':id/favorite')
+  // Toggles the favorite flag for one media item and stores its card.
+  public async favorite(@Req() req: Request, @Res() res: Response, @Body() body: MediaFlagDTO): Promise<void> {
+    const payload = await this.mediaService.toggleFavorite(req.params.id as string, body.media);
     res.status(200).json(payload);
   }
 
-  @Get(':id/like')
-  // Toggles the liked flag for one media item.
-  public async like(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload = await this.mediaService.toggleLike(req.params.id as string);
-    res.status(200).json(payload);
-  }
-
-  @Get(':id/hide')
-  // Toggles the hidden flag for one media item.
-  public async hide(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload = await this.mediaService.toggleHidden(req.params.id as string);
+  @Patch(':id/like')
+  // Toggles the liked flag for one media item and stores its card.
+  public async like(@Req() req: Request, @Res() res: Response, @Body() body: MediaFlagDTO): Promise<void> {
+    const payload = await this.mediaService.toggleLike(req.params.id as string, body.media);
     res.status(200).json(payload);
   }
 
   @Patch(':id/watch-position')
-  // Saves the playback position (milliseconds) for one media item.
+  // Saves the playback position (milliseconds) for one media item and stores its card.
   public async saveWatchPosition(
     @Req() req: Request,
     @Res() res: Response,
@@ -93,6 +81,7 @@ export class MediaController {
     const payload = await this.mediaService.saveWatchPosition(
       req.params.id as string,
       body.watchPositionAt,
+      body.media,
     );
     res.status(200).json(payload);
   }

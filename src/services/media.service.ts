@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { XMDCentre } from '../core/centres/XMD.centre';
 import { MediaRepository } from '../repositories/media.repository';
-import { parsePage, PER_PAGE_SIZE } from '../shared/paging';
+import { PER_PAGE_SIZE } from '../shared/paging';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
 import { IMediaInfo } from '../shared/interfaces/media-info.interface';
+import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
+import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { IMeta } from '../shared/interfaces/meta.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
 
@@ -15,88 +17,46 @@ export class MediaService {
     private readonly mediaRepository: MediaRepository,
   ) {}
 
-  // Searches XMD, upserts catalog rows, and returns results with stored flags.
+  // Searches XMD and returns one page of results. Nothing is read from or written to the database.
   public async findAll(query: IFindAll): Promise<IMediaContainer> {
     const medias: IMediaInfo[] = await this.xmdCentre.search(query.keyword, query.page);
-    await this.mediaRepository.upsertFromSearch(medias);
-    const rows = await this.mediaRepository.findByIdentifiers(
-      medias.map((media) => media.identifier).filter((id): id is string => Boolean(id)),
-    );
-    const byID = new Map(rows.map((row) => [row.identifier, row]));
-
     const meta: IMeta = {
       currentPage: query.page,
       isLastPage: medias.length < PER_PAGE_SIZE,
     };
 
     return {
-      medias: medias.map((media) => {
-        const row = media.identifier ? byID.get(media.identifier) : undefined;
-        return {
-          ...media,
-          isLiked: row?.isLiked ?? false,
-          isFavorite: row?.isFavorite ?? false,
-          isHidden: row?.isHidden ?? false,
-          watchedAt: row?.watchedAt ?? undefined,
-          watchedTimes: row?.watchedTimes ?? 0,
-          watchPositionAt: row?.watchPositionAt ?? undefined,
-        };
-      }),
+      medias,
       meta,
     };
   }
 
-  // Returns stored liked items with catalog fields and paging meta.
-  public async findLiked(page: number): Promise<IMediaContainer> {
-    return this.findFlagged('isLiked', page);
-  }
-
-  // Returns stored favorited items with catalog fields and paging meta.
-  public async findFavorites(page: number): Promise<IMediaContainer> {
-    return this.findFlagged('isFavorite', page);
+  // Returns every media the user has liked, favorited, downloaded, or started watching.
+  public async findLibrary(): Promise<IMediaLibrary> {
+    return {
+      medias: await this.mediaRepository.findLibrary(),
+    };
   }
 
   // Toggles liked after checking that the media id is a valid token.
-  public async toggleLike(id: string) {
+  public async toggleLike(id: string, media: IMediaSnapshot) {
     this.assertMediaID(id);
-    return this.mediaRepository.toggleLike(id);
+    return this.mediaRepository.toggleLike(id, media);
   }
 
   // Toggles favorite after checking that the media id is a valid token.
-  public async toggleFavorite(id: string) {
+  public async toggleFavorite(id: string, media: IMediaSnapshot) {
     this.assertMediaID(id);
-    return this.mediaRepository.toggleFavorite(id);
-  }
-
-  // Toggles hidden after checking that the media id is a valid token.
-  public async toggleHidden(id: string) {
-    this.assertMediaID(id);
-    return this.mediaRepository.toggleHidden(id);
+    return this.mediaRepository.toggleFavorite(id, media);
   }
 
   // Saves playback position after checking that the media id and value are valid.
-  public async saveWatchPosition(id: string, watchPositionAt: number) {
+  public async saveWatchPosition(id: string, watchPositionAt: number, media: IMediaSnapshot) {
     this.assertMediaID(id);
     if (!Number.isFinite(watchPositionAt) || watchPositionAt < 0) {
       throw new BadRequestException('Invalid watchPositionAt');
     }
-    return this.mediaRepository.saveWatchPosition(id, watchPositionAt);
-  }
-
-  // Loads one flag collection page and builds the search-shaped container.
-  private async findFlagged(
-    flag: 'isLiked' | 'isFavorite',
-    page: number,
-  ): Promise<IMediaContainer> {
-    const currentPage = parsePage(page);
-    const { medias, total } = await this.mediaRepository.findByFlag(flag, currentPage);
-    return {
-      medias,
-      meta: {
-        currentPage,
-        isLastPage: currentPage * PER_PAGE_SIZE >= total,
-      },
-    };
+    return this.mediaRepository.saveWatchPosition(id, watchPositionAt, media);
   }
 
   // Rejects ids that are empty or do not decode to an origin URL.

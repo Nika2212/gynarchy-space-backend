@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
+// One media the user cares about: liked, favorited, downloaded, or with watch progress. Deleted once none of those is left.
 @Schema({ collection: 'medias', timestamps: true })
 export class MediaDocument {
   @Prop({ required: true, unique: true, index: true })
@@ -37,7 +38,7 @@ export class MediaDocument {
   isFavorite: boolean;
 
   @Prop({ required: true, default: false })
-  isHidden: boolean;
+  isDownloaded: boolean;
 
   @Prop({ type: Date, default: null })
   likedAt: Date | null;
@@ -54,8 +55,6 @@ export class MediaDocument {
   @Prop({ type: Number, default: null })
   watchPositionAt: number | null;
 
-  @Prop({ type: Date, default: null })
-  lastSeenAt: Date | null;
 }
 
 export type MediaModel = HydratedDocument<MediaDocument>;

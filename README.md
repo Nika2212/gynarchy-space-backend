@@ -24,7 +24,7 @@ Fill `.env`:
 | `MONGODB_USERNAME` | no | Atlas user |
 | `MONGODB_PASSWORD` | no | Atlas password |
 
-Search/catalog comes from XMD. Likes, favorites, hidden, and watch state persist in MongoDB Atlas. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
+Search comes straight from XMD; searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
 
 ```bash
 npm run start:dev
@@ -88,16 +88,13 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
       "description": "",
       "postedAt": "...",
       "duration": 0,
-      "thumbnailSrc": ["/images/<token>", "..."],
-      "isLiked": false,
-      "isFavorite": false,
-      "isHidden": false,
-      "watchedTimes": 0
+      "thumbnailSrc": ["/images/<token>", "..."]
     }
   ]
 }
 ```
 
+- No user flags: merge them from `GET /api/media/library` on the client
 - `duration` is milliseconds
 - `isLastPage` is true when the page has fewer than 24 items
 - Prefix paths with `API_BASE`: watch `/api/media/<identifier>`, image `/api/images/<token>`
@@ -135,27 +132,53 @@ Use as `<video src="{API_BASE}/media/{identifier}">`. Public on purpose, like th
 | 429 | More than 300 stream requests / minute (each `Range` request counts), or JSDOM queue full |
 | 502 | Upstream stream failed |
 
-### Liked / favorites lists (JWT)
+### Library (JWT)
 
-Same response shape as search. `page` defaults to `1`. 24 items per page, most recently liked / favorited first.
+`GET /api/media/library`
 
-`GET /api/media/liked?page=1`  
-`GET /api/media/favorites?page=1`
+Every media the user has liked, favorited, downloaded, or started watching, most recently changed first. Load it once (the home resolver does) and mark search results with it.
 
-These are static paths. Do not confuse them with the toggle routes below.
+**200**
+
+```json
+{
+  "medias": [
+    {
+      "identifier": "<id>",
+      "url": "/media/<id>",
+      "title": "...",
+      "description": "",
+      "postedAt": "...",
+      "duration": 0,
+      "thumbnailSrc": ["/images/<token>", "..."],
+      "isLiked": true,
+      "isFavorite": false,
+      "isDownloaded": false,
+      "watchedAt": "2026-09-26T06:30:00.000Z",
+      "watchedTimes": 0,
+      "watchPositionAt": 45000
+    }
+  ]
+}
+```
+
+`watchedAt` and `watchPositionAt` are left out when the media was never watched. `isDownloaded` is stored but nothing sets it yet.
 
 | Status | When |
 |---|---|
 | 401 | No/invalid token |
 | 429 | More than 120 / minute |
 
-### Like / favorite / hide (JWT)
+### Like / favorite (JWT)
 
-Toggles persist in MongoDB. Search results include the current flags.
+`PATCH /api/media/:id/like`  
+`PATCH /api/media/:id/favorite`
 
-`GET /api/media/:id/like`  
-`GET /api/media/:id/favorite`  
-`GET /api/media/:id/hide`
+Toggles the flag. Send the card shown to the user, so the stored media can be listed without a search:
+
+```json
+{ "media": { "title": "...", "duration": 61000, "postedAt": "...", "thumbnailSrc": ["/images/<token>"] } }
+```
 
 **200**
 
@@ -164,12 +187,19 @@ Toggles persist in MongoDB. Search results include the current flags.
   "identifier": "<id>",
   "isLiked": true,
   "isFavorite": false,
-  "isHidden": false,
+  "isDownloaded": false,
   "watchedAt": null,
   "watchedTimes": 0,
   "watchPositionAt": null
 }
 ```
+
+| Status | When |
+|---|---|
+| 400 | Missing/invalid `media` card or extra fields |
+| 401 | No/invalid token |
+| 404 | Bad id |
+| 429 | More than 120 / minute |
 
 ### Watch position (JWT)
 
@@ -178,7 +208,7 @@ Toggles persist in MongoDB. Search results include the current flags.
 Send this from the player about every 30 seconds. `watchPositionAt` is milliseconds (same unit as `duration`). Also sets `watchedAt` to now. Does not increment `watchedTimes`.
 
 ```json
-{ "watchPositionAt": 45000 }
+{ "watchPositionAt": 45000, "media": { "title": "...", "duration": 61000, "postedAt": "...", "thumbnailSrc": ["/images/<token>"] } }
 ```
 
 **200**
@@ -188,18 +218,18 @@ Send this from the player about every 30 seconds. `watchPositionAt` is milliseco
   "identifier": "<id>",
   "isLiked": false,
   "isFavorite": false,
-  "isHidden": false,
+  "isDownloaded": false,
   "watchedAt": "2026-09-26T06:30:00.000Z",
   "watchedTimes": 0,
   "watchPositionAt": 45000
 }
 ```
 
-The next search for that item returns the saved `watchPositionAt` and `watchedAt`.
+The library then returns the saved `watchPositionAt` and `watchedAt` for that item.
 
 | Status | When |
 |---|---|
-| 400 | Missing/invalid `watchPositionAt` (must be a finite number ≥ 0) or extra fields |
+| 400 | Missing/invalid `watchPositionAt` (must be a finite number ≥ 0), missing/invalid `media` card, or extra fields |
 | 401 | No/invalid token |
 | 404 | Bad id |
 | 429 | More than 120 / minute |
