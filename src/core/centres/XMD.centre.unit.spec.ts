@@ -137,6 +137,14 @@ describe('XMDCentre (unit)', () => {
     expect(http.get).toHaveBeenLastCalledWith('/search/', expect.objectContaining({ params: expect.objectContaining({ q: '' }) }));
   });
 
+  it('sends a keyword with spaces as a lowercase dashed slug', async () => {
+    const centre = new XMDCentre(config('https://x.test'));
+    http.get.mockResolvedValue({ data: SEARCH_HTML });
+
+    await centre.search('  Gynarchy   Space ');
+    expect(http.get).toHaveBeenLastCalledWith('/search/gynarchy-space', expect.objectContaining({ params: expect.objectContaining({ q: 'gynarchy-space' }) }));
+  });
+
   it('rethrows HttpExceptions from search and wraps other errors', async () => {
     const centre = new XMDCentre(config('https://x.test'));
     http.get.mockRejectedValueOnce(new BadRequestException('nope'));

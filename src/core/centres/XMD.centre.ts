@@ -115,14 +115,15 @@ export class XMDCentre implements OnModuleDestroy {
   public async search(keyword: string, page = 1): Promise<IMediaInfo[]> {
     const normalizedKeyword = keyword === undefined ? '' : typeof keyword === 'string' ? keyword.trim() : keyword;
     this.validateSearchInput(normalizedKeyword, page);
+    const slug = this.toSearchSlug(normalizedKeyword);
 
     try {
-      const { data } = await this.http.get(`/search/${encodeURIComponent(normalizedKeyword)}`, {
+      const { data } = await this.http.get(`/search/${encodeURIComponent(slug)}`, {
         params: {
           mode: 'async',
           function: 'get_block',
           block_id: 'list_videos_videos_list_search_result',
-          q: normalizedKeyword,
+          q: slug,
           from_videos: page,
           from_albums: page,
         },
@@ -439,6 +440,11 @@ export class XMDCentre implements OnModuleDestroy {
     }
 
     throw new XMDCentreException(`XMDCentre error in ${context}`, meta);
+  }
+
+  // XMD search URLs use lowercase words joined by dashes: "Gynarchy Space" -> "gynarchy-space".
+  private toSearchSlug(keyword: string): string {
+    return keyword.toLowerCase().split(/\s+/).filter(Boolean).join('-');
   }
 
   // Rejects non-string or too-long keywords and out-of-range pages. An empty keyword is allowed.
