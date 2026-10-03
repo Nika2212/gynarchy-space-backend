@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../core/public.decorator';
@@ -38,6 +38,13 @@ export class MediaController {
     res.status(200).json(payload);
   }
 
+  @Delete('history')
+  // Clears the whole watch history; liked, favorited, and downloaded media stay in the library.
+  public async clearAllWatchHistory(@Res() res: Response): Promise<void> {
+    await this.mediaService.clearAllWatchHistory();
+    res.status(204).send();
+  }
+
   @Get(':id')
   @Public()
   @Throttle({ default: { limit: 300, ttl: 60000 } })
@@ -68,6 +75,13 @@ export class MediaController {
   // Toggles the liked flag for one media item and stores its card.
   public async like(@Req() req: Request, @Res() res: Response, @Body() body: MediaFlagDTO): Promise<void> {
     const payload = await this.mediaService.toggleLike(req.params.id as string, body.media);
+    res.status(200).json(payload);
+  }
+
+  @Delete(':id/watch-history')
+  // Removes one media from the watch history.
+  public async clearWatchHistory(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const payload = await this.mediaService.clearWatchHistory(req.params.id as string);
     res.status(200).json(payload);
   }
 

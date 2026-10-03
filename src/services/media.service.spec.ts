@@ -34,6 +34,8 @@ describe('MediaService', () => {
   let toggleLike: jest.Mock;
   let toggleFavorite: jest.Mock;
   let saveWatchPosition: jest.Mock;
+  let clearWatchHistory: jest.Mock;
+  let clearAllWatchHistory: jest.Mock;
 
   beforeEach(async () => {
     search = jest.fn();
@@ -41,6 +43,8 @@ describe('MediaService', () => {
     toggleLike = jest.fn().mockResolvedValue({ isLiked: true });
     toggleFavorite = jest.fn().mockResolvedValue({ isFavorite: true });
     saveWatchPosition = jest.fn().mockResolvedValue({ watchPositionAt: 12 });
+    clearWatchHistory = jest.fn().mockResolvedValue({ watchPositionAt: null });
+    clearAllWatchHistory = jest.fn().mockResolvedValue(undefined);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MediaService,
@@ -55,6 +59,8 @@ describe('MediaService', () => {
             toggleLike,
             toggleFavorite,
             saveWatchPosition,
+            clearWatchHistory,
+            clearAllWatchHistory,
           },
         },
       ],
@@ -113,5 +119,22 @@ describe('MediaService', () => {
     await expect(service.saveWatchPosition('nope', 12, SNAPSHOT)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.saveWatchPosition(id, -1, SNAPSHOT)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.saveWatchPosition(id, Number.NaN, SNAPSHOT)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('clears one media from the watch history, or 404s for an invalid id or unknown media', async () => {
+    const id = encryptURLToShortToken('https://example.com/v');
+
+    await expect(service.clearWatchHistory(id)).resolves.toEqual({ watchPositionAt: null });
+    expect(clearWatchHistory).toHaveBeenCalledWith(id);
+
+    await expect(service.clearWatchHistory('nope')).rejects.toBeInstanceOf(NotFoundException);
+
+    clearWatchHistory.mockResolvedValueOnce(null);
+    await expect(service.clearWatchHistory(id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('clears the whole watch history', async () => {
+    await expect(service.clearAllWatchHistory()).resolves.toBeUndefined();
+    expect(clearAllWatchHistory).toHaveBeenCalled();
   });
 });

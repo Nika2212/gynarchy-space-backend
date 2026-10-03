@@ -3,14 +3,18 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { AlbumsController } from './controllers/albums.controller';
 import { HealthController } from './controllers/health.controller';
 import { ImagesController } from './controllers/images.controller';
 import { MediaController } from './controllers/media.controller';
 import { SecurityController } from './controllers/security.controller';
 import { XMDCentre } from './core/centres/XMD.centre';
 import { SecurityGuard } from './core/security.guard';
+import { AlbumRepository } from './repositories/album.repository';
+import { AlbumDocument, AlbumSchema } from './repositories/album.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
+import { AlbumService } from './services/album.service';
 import { ImageProxyService } from './services/image-proxy.service';
 import { MediaStreamService } from './services/media-stream.service';
 import { MediaService } from './services/media.service';
@@ -57,9 +61,12 @@ export function mongoOptions(configService: ConfigService) {
       inject: [ConfigService],
       useFactory: mongoOptions,
     }),
-    MongooseModule.forFeature([{ name: MediaDocument.name, schema: MediaSchema }]),
+    MongooseModule.forFeature([
+      { name: MediaDocument.name, schema: MediaSchema },
+      { name: AlbumDocument.name, schema: AlbumSchema },
+    ]),
   ],
-  controllers: [HealthController, SecurityController, MediaController, ImagesController],
+  controllers: [HealthController, SecurityController, MediaController, ImagesController, AlbumsController],
   providers: [
     SecurityService,
     SecurityGuard,
@@ -68,6 +75,8 @@ export function mongoOptions(configService: ConfigService) {
     MediaStreamService,
     ImageProxyService,
     MediaRepository,
+    AlbumService,
+    AlbumRepository,
   ],
 })
 export class AppModule {}

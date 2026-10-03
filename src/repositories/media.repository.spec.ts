@@ -44,10 +44,12 @@ describe('MediaRepository', () => {
   const find = jest.fn(() => ({ sort }));
   const findOne = jest.fn(() => ({ exec: execFindOne }));
   const deleteOne = jest.fn(() => ({ exec: execDelete }));
+  const deleteMany = jest.fn(() => ({ exec: execDelete }));
+  const updateMany = jest.fn(() => ({ exec: execDelete }));
   const create = jest.fn();
 
   beforeEach(async () => {
-    [execFind, execFindOne, execDelete, sort, find, findOne, deleteOne, create].forEach((mock) => mock.mockClear());
+    [execFind, execFindOne, execDelete, sort, find, findOne, deleteOne, deleteMany, updateMany, create].forEach((mock) => mock.mockClear());
     execFind.mockReset();
     execFindOne.mockReset();
     create.mockReset();
@@ -59,7 +61,7 @@ describe('MediaRepository', () => {
         { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
         {
           provide: getModelToken(MediaDocument.name),
-          useValue: { find, findOne, deleteOne, create },
+          useValue: { find, findOne, deleteOne, deleteMany, updateMany, create },
         },
       ],
     }).compile();
@@ -71,6 +73,7 @@ describe('MediaRepository', () => {
     execFind.mockResolvedValue([
       storedRow('a', {
         isLiked: true,
+        likedAt: new Date('2026-02-02'),
         isDownloaded: undefined,
         thumbnailSrc: encryptText('["/images/a"]', SECRET),
         watchedAt: new Date('2026-01-01'),
@@ -100,6 +103,8 @@ describe('MediaRepository', () => {
       watchPositionAt: 5_000,
       watchedTimes: 0,
       duration: 0,
+      likedAt: new Date('2026-02-02'),
+      favoritedAt: undefined,
     });
     expect(library[1]).toMatchObject({ title: '', description: '', postedAt: '', thumbnailSrc: [], watchedAt: undefined, watchPositionAt: undefined });
     expect(library[2].thumbnailSrc).toEqual([]);
@@ -169,7 +174,7 @@ describe('MediaRepository', () => {
     execFindOne.mockResolvedValue(null);
 
     await expect(repository.saveWatchPosition(id, 15_000, SNAPSHOT)).resolves.toMatchObject({ identifier: id, watchPositionAt: 15_000, watchedAt: expect.any(Date) });
-    expect(create.mock.calls[0][0]).toMatchObject({ watchPositionAt: 15_000, isLiked: false });
+    expect(create.mock.calls[0][0]).toMatchObject({ watchPositionAt: 15_000, isLiked: false, watchedTimes: 1 });
   });
 
   it('updates watch position, watched time, and card on an existing row', async () => {
@@ -179,12 +184,45 @@ describe('MediaRepository', () => {
     await expect(repository.saveWatchPosition('raw-id', 4_500, SNAPSHOT)).resolves.toMatchObject({
       identifier: 'raw-id',
       isDownloaded: false,
-      watchedTimes: 0,
+      watchedTimes: 1,
       watchPositionAt: 4_500,
       watchedAt: expect.any(Date),
     });
     expect(tryDecryptText(row.postedAt as string, SECRET)).toBe('2 days ago');
     expect(row.save).toHaveBeenCalled();
+  });
+
+  it('counts a new viewing only after a long gap since the last save', async () => {
+    const recent = storedRow('r', { watchedAt: new Date(Date.now() - 60_000), watchedTimes: 2, watchPositionAt: 1_000 });
+    execFindOne.mockResolvedValueOnce(recent);
+    await expect(repository.saveWatchPosition('r', 2_000, SNAPSHOT)).resolves.toMatchObject({ watchedTimes: 2 });
+
+    const old = storedRow('o', { watchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000), watchedTimes: 2, watchPositionAt: 1_000 });
+    execFindOne.mockResolvedValueOnce(old);
+    await expect(repository.saveWatchPosition('o', 2_000, SNAPSHOT)).resolves.toMatchObject({ watchedTimes: 3 });
+  });
+
+  it('clears one media from the watch history and deletes it when nothing else is left', async () => {
+    execFindOne.mockResolvedValueOnce(null);
+    await expect(repository.clearWatchHistory('missing')).resolves.toBeNull();
+
+    const historyOnly = storedRow('h', { watchedAt: new Date(), watchedTimes: 3, watchPositionAt: 9_000 });
+    execFindOne.mockResolvedValueOnce(historyOnly);
+    await expect(repository.clearWatchHistory('h')).resolves.toMatchObject({ identifier: 'h', watchedAt: null, watchedTimes: 0, watchPositionAt: null });
+    expect(deleteOne).toHaveBeenCalledWith({ identifierHash: hashIdentifier('h', SECRET) });
+
+    const liked = storedRow('l', { isLiked: true, watchedAt: new Date(), watchedTimes: 1, watchPositionAt: 9_000 });
+    execFindOne.mockResolvedValueOnce(liked);
+    await expect(repository.clearWatchHistory('l')).resolves.toMatchObject({ isLiked: true, watchPositionAt: null });
+    expect(liked.save).toHaveBeenCalled();
+    expect(deleteOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the whole watch history but keeps flagged media', async () => {
+    await repository.clearAllWatchHistory();
+
+    expect(deleteMany).toHaveBeenCalledWith({ isLiked: false, isFavorite: false, isDownloaded: false });
+    expect(updateMany).toHaveBeenCalledWith({ watchedAt: { $ne: null } }, { watchedAt: null, watchedTimes: 0, watchPositionAt: null });
   });
 
   it('returns undefined flags for a stored row whose identifier cannot be decrypted', async () => {

@@ -35,6 +35,15 @@ const FLAG_DATES = {
   isFavorite: 'favoritedAt',
 } as const;
 
+// A save this long after the previous one counts as a new viewing (watchedTimes goes up).
+const WATCH_SESSION_GAP_MS = 30 * 60 * 1000;
+
+const HISTORY_RESET = {
+  watchedAt: null,
+  watchedTimes: 0,
+  watchPositionAt: null,
+} as const;
+
 // Rows the user still cares about. Older rows saved by searches (no flags, no progress) are left out.
 const LIBRARY_FILTER = {
   $or: [{ isLiked: true }, { isFavorite: true }, { isDownloaded: true }, { watchPositionAt: { $ne: null } }],
@@ -67,7 +76,7 @@ export class MediaRepository {
     return this.toggleFlag(identifier, 'isFavorite', media);
   }
 
-  // Writes the playback position and last-watched time for one media item.
+  // Writes the playback position and last-watched time for one media item. The first save of a viewing counts it in watchedTimes.
   public async saveWatchPosition(identifier: string, watchPositionAt: number, media: IMediaSnapshot): Promise<MediaFlags> {
     const secret = this.secret();
     const identifierHash = hashIdentifier(identifier, secret);
@@ -75,13 +84,48 @@ export class MediaRepository {
     const watchedAt = new Date();
 
     if (!existing) {
-      const created = await this.create(identifier, media, secret, { watchPositionAt, watchedAt });
+      const created = await this.create(identifier, media, secret, { watchPositionAt, watchedAt, watchedTimes: 1 });
       return this.toFlags(created, secret)!;
     }
 
-    Object.assign(existing, this.encryptCatalog(identifier, media, secret), { watchPositionAt, watchedAt });
+    const watchedTimes = (existing.watchedTimes ?? 0) + (this.isNewViewing(existing.watchedAt, watchedAt) ? 1 : 0);
+
+    Object.assign(existing, this.encryptCatalog(identifier, media, secret), { watchPositionAt, watchedAt, watchedTimes });
     await existing.save();
     return this.toFlags(existing, secret)!;
+  }
+
+  // Removes one media from the watch history. The row stays while it is liked, favorited, or downloaded. Null when it was not stored.
+  public async clearWatchHistory(identifier: string): Promise<MediaFlags | null> {
+    const secret = this.secret();
+    const identifierHash = hashIdentifier(identifier, secret);
+    const existing = await this.mediaModel.findOne({ identifierHash }).exec();
+
+    if (!existing) {
+      return null;
+    }
+
+    Object.assign(existing, HISTORY_RESET);
+
+    if (this.isUnused(existing)) {
+      await this.mediaModel.deleteOne({ identifierHash }).exec();
+    } else {
+      await existing.save();
+    }
+
+    return this.toFlags(existing, secret)!;
+  }
+
+  // Clears the whole watch history: history-only rows are deleted, flagged rows keep their flags.
+  public async clearAllWatchHistory(): Promise<void> {
+    const unflagged = { isLiked: false, isFavorite: false, isDownloaded: false };
+
+    await this.mediaModel.deleteMany(unflagged).exec();
+    await this.mediaModel.updateMany({ watchedAt: { $ne: null } }, HISTORY_RESET).exec();
+  }
+
+  private isNewViewing(previous: Date | null | undefined, now: Date): boolean {
+    return !previous || now.getTime() - new Date(previous).getTime() > WATCH_SESSION_GAP_MS;
   }
 
   // Creates the row if needed and flips the flag. Refreshes the stored card, and deletes the row once nothing is left on it.
@@ -155,6 +199,8 @@ export class MediaRepository {
       isLiked: row.isLiked,
       isFavorite: row.isFavorite,
       isDownloaded: row.isDownloaded ?? false,
+      likedAt: row.likedAt ?? undefined,
+      favoritedAt: row.favoritedAt ?? undefined,
       watchedAt: row.watchedAt ?? undefined,
       watchedTimes: row.watchedTimes ?? 0,
       watchPositionAt: row.watchPositionAt ?? undefined,

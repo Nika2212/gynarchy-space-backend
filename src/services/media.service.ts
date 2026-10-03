@@ -59,6 +59,21 @@ export class MediaService {
     return this.mediaRepository.saveWatchPosition(id, watchPositionAt, media);
   }
 
+  // Removes one media from the watch history after checking the id; 404 when it is not in the library.
+  public async clearWatchHistory(id: string) {
+    this.assertMediaID(id);
+    const flags = await this.mediaRepository.clearWatchHistory(id);
+    if (!flags) {
+      throw new NotFoundException('Media is not in the library');
+    }
+    return flags;
+  }
+
+  // Clears the whole watch history; liked, favorited, and downloaded media stay.
+  public async clearAllWatchHistory(): Promise<void> {
+    await this.mediaRepository.clearAllWatchHistory();
+  }
+
   // Rejects ids that are empty or do not decode to an origin URL.
   private assertMediaID(id: string): void {
     if (!id || !decryptShortTokenToURL(id)) {

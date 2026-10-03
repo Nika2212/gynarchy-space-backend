@@ -16,6 +16,8 @@ describe('MediaController', () => {
   let toggleFavorite: jest.Mock;
   let toggleLike: jest.Mock;
   let saveWatchPosition: jest.Mock;
+  let clearWatchHistory: jest.Mock;
+  let clearAllWatchHistory: jest.Mock;
 
   const emptyPayload: IMediaContainer = {
     medias: [],
@@ -31,6 +33,8 @@ describe('MediaController', () => {
     toggleFavorite = jest.fn().mockResolvedValue({ isFavorite: true });
     toggleLike = jest.fn().mockResolvedValue({ isLiked: true });
     saveWatchPosition = jest.fn().mockResolvedValue({ watchPositionAt: 30_000 });
+    clearWatchHistory = jest.fn().mockResolvedValue({ watchPositionAt: null });
+    clearAllWatchHistory = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [MediaController],
@@ -43,6 +47,8 @@ describe('MediaController', () => {
             toggleFavorite,
             toggleLike,
             saveWatchPosition,
+            clearWatchHistory,
+            clearAllWatchHistory,
           },
         },
         {
@@ -135,6 +141,16 @@ describe('MediaController', () => {
   it('PATCH /media/:id/like toggles like with the card', async () => {
     await request(app.getHttpServer()).patch('/media/abc/like').send({ media: { title: 't', duration: 1, postedAt: '', thumbnailSrc: [] } }).expect(200).expect({ isLiked: true });
     expect(toggleLike).toHaveBeenCalledWith('abc', { title: 't', duration: 1, postedAt: '', thumbnailSrc: [] });
+  });
+
+  it('DELETE /media/:id/watch-history removes one media from the history', async () => {
+    await request(app.getHttpServer()).delete('/media/abc/watch-history').expect(200).expect({ watchPositionAt: null });
+    expect(clearWatchHistory).toHaveBeenCalledWith('abc');
+  });
+
+  it('DELETE /media/history clears the whole history', async () => {
+    await request(app.getHttpServer()).delete('/media/history').expect(204);
+    expect(clearAllWatchHistory).toHaveBeenCalled();
   });
 
   it('PATCH /media/:id/watch-position saves the playback position', async () => {
