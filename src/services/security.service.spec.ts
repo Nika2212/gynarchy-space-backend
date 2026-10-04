@@ -46,6 +46,47 @@ describe('SecurityService', () => {
     await expect(service.auth('0000', 'ip')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  describe('in production', () => {
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+    const homeScreenIPhone = { userAgent: IPHONE, displayMode: 'standalone' };
+
+    beforeEach(() => {
+      configService.get.mockImplementation((key: string) => (key === 'NODE_ENV' ? 'production' : '0000'));
+    });
+
+    it('signs in the iOS home-screen app', async () => {
+      await expect(service.auth('0000', 'ip', homeScreenIPhone)).resolves.toEqual({ accessToken: 'jwt' });
+    });
+
+    it('answers a disallowed device exactly like a wrong passcode', async () => {
+      const desktop = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130', displayMode: 'standalone' };
+      const safariTab = { userAgent: IPHONE, displayMode: 'browser' };
+
+      for (const device of [desktop, safariTab, { userAgent: IPHONE }, { displayMode: 'standalone' }, {}]) {
+        await expect(service.auth('0000', `ip-${JSON.stringify(device)}`, device)).rejects.toThrow(new UnauthorizedException('Invalid passcode'));
+      }
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('counts disallowed devices toward the block', async () => {
+      for (let i = 0; i < MAX_FAILED_ATTEMPTS; i++) {
+        await expect(service.auth('0000', 'ip', {})).rejects.toBeInstanceOf(UnauthorizedException);
+      }
+
+      await expect(service.auth('0000', 'ip', homeScreenIPhone)).rejects.toMatchObject({ status: 429 });
+    });
+
+    it('still rejects a wrong passcode on the allowed device', async () => {
+      await expect(service.auth('1111', 'ip', homeScreenIPhone)).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  it('allows any device outside production', async () => {
+    configService.get.mockImplementation((key: string) => (key === 'NODE_ENV' ? 'development' : '0000'));
+
+    await expect(service.auth('0000', 'ip', {})).resolves.toEqual({ accessToken: 'jwt' });
+  });
+
   it('never blocks on correct passcodes', async () => {
     for (let i = 0; i < MAX_FAILED_ATTEMPTS * 2; i++) {
       await expect(service.auth('0000', 'ip')).resolves.toEqual({ accessToken: 'jwt' });

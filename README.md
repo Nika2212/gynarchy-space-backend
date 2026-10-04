@@ -56,6 +56,8 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
 { "passcode": "..." }
 ```
 
+With `NODE_ENV=production` the request must also come from the iOS home-screen app: an `iPhone`/`iPad`/`iPod` `User-Agent` and the header `X-Display-Mode: standalone`. Any other device gets the same **401** as a wrong passcode, and it counts toward the block below.
+
 **200**
 
 ```json
@@ -65,7 +67,7 @@ Use this as the Railway HTTP healthcheck path: `/api/health`.
 | Status | When |
 |---|---|
 | 400 | Missing/empty body or extra fields |
-| 401 | Wrong passcode |
+| 401 | Wrong passcode, or (in production) not the iOS home-screen app |
 | 429 | 5 wrong passcodes from one IP. That IP is then blocked for 1 hour, even with the right passcode. Correct logins are not counted |
 
 ### Search (JWT)

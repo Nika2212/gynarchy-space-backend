@@ -32,10 +32,15 @@ describe('SecurityController', () => {
 
     await request(app.getHttpServer())
       .post('/security/passcode')
+      .set('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')
+      .set('X-Display-Mode', 'standalone')
       .send({ passcode: '0000' })
       .expect(200)
       .expect({ accessToken: 'token' });
 
-    expect(auth).toHaveBeenCalledWith('0000', expect.any(String));
+    expect(auth).toHaveBeenCalledWith('0000', expect.any(String), {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+      displayMode: 'standalone',
+    });
   });
 });

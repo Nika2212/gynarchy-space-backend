@@ -1,7 +1,11 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { IClientDevice } from '../shared/interfaces/auth.interface';
 import { safeEqual } from '../shared/timing-safe';
+
+const IOS_USER_AGENT = /\b(iPhone|iPad|iPod)\b/;
+const STANDALONE_DISPLAY_MODE = 'standalone';
 
 export const MAX_FAILED_ATTEMPTS = 5;
 export const BLOCK_DURATION_MS = 60 * 60 * 1000;
@@ -22,13 +26,14 @@ export class SecurityService {
     private readonly configService: ConfigService,
   ) {}
 
-  // Compares the passcode and signs a JWT for a valid owner.
-  public async auth(passcode: string, client: string) {
+  // Compares the passcode and signs a JWT for a valid owner on an allowed device. A disallowed device looks like a wrong passcode.
+  public async auth(passcode: string, client: string, device: IClientDevice = {}) {
     this.assertNotBlocked(client);
 
     const secretPasscode = this.configService.get<string>('APP_PASSCODE')?.trim() ?? '';
+    const passcodeMatches = !!secretPasscode && safeEqual(passcode, secretPasscode);
 
-    if (!secretPasscode || !safeEqual(passcode, secretPasscode)) {
+    if (!passcodeMatches || !this.isAllowedDevice(device)) {
       this.recordFailure(client);
       throw new UnauthorizedException('Invalid passcode');
     }
@@ -38,6 +43,15 @@ export class SecurityService {
     return {
       accessToken: await this.jwtService.signAsync({ sub: 'admin', role: 'owner' }),
     };
+  }
+
+  // In production only the iOS home-screen app may sign in; elsewhere every device is allowed.
+  private isAllowedDevice(device: IClientDevice): boolean {
+    if (this.configService.get<string>('NODE_ENV') !== 'production') {
+      return true;
+    }
+
+    return IOS_USER_AGENT.test(device.userAgent ?? '') && device.displayMode === STANDALONE_DISPLAY_MODE;
   }
 
   // Rejects the client while its block is active, and forgets stale failures.
