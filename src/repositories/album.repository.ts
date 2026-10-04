@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
+import { decryptShortTokenToURL } from '../shared/url-token';
 import type { IAlbum, IAlbumMedia } from '../shared/interfaces/album.interface';
 import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { AlbumDocument, AlbumItem, AlbumModel } from './album.schema';
@@ -12,6 +14,7 @@ export class AlbumRepository {
   constructor(
     @InjectModel(AlbumDocument.name) private readonly albumModel: Model<AlbumDocument>,
     private readonly configService: ConfigService,
+    private readonly centreRegistry: CentreRegistry,
   ) {}
 
   // Loads every album, newest first, with its media newest-added first.
@@ -133,6 +136,7 @@ export class AlbumRepository {
       duration: item.duration ?? 0,
       thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(item.thumbnailSrc, secret)),
       ...this.previewOf(tryDecryptText(item.previewSrc, secret)),
+      source: this.centreRegistry.findByURL(decryptShortTokenToURL(identifier) ?? '')?.source,
       addedAt: new Date(item.addedAt),
     };
   }

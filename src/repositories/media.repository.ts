@@ -201,6 +201,7 @@ export class MediaRepository {
       duration: row.duration ?? 0,
       thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(row.thumbnailSrc, secret)),
       ...this.previewOf(tryDecryptText(row.previewSrc, secret)),
+      source: this.centreRegistry.findByURL(decryptShortTokenToURL(identifier) ?? '')?.source,
       isLiked: row.isLiked,
       isFavorite: row.isFavorite,
       isDownloaded: row.isDownloaded ?? false,

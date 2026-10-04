@@ -1,3 +1,4 @@
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
@@ -64,6 +65,7 @@ describe('AlbumRepository', () => {
     const module = await Test.createTestingModule({
       providers: [
         AlbumRepository,
+        { provide: CentreRegistry, useValue: { findByURL: () => undefined } },
         { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
         { provide: getModelToken(AlbumDocument.name), useValue: { find, findById, deleteOne, countDocuments, create } },
       ],

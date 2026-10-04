@@ -263,6 +263,7 @@ export abstract class BaseCentre implements OnModuleDestroy {
             return `/images/${encryptURLToShortToken(absolute)}`;
           }),
           ...(preview ? { previewSrc: `/previews/${encryptURLToShortToken(preview)}` } : {}),
+          source: this.source,
           identifier,
           url: `/media/${identifier}`,
           description: '',

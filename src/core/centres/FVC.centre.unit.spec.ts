@@ -94,6 +94,7 @@ describe('FVCCentre (unit)', () => {
       [1, 2, 3, 4, 5].map((n) => `https://www.fvc.test/contents/videos_screenshots/33000/33018/320x180/${n}.jpg`),
     );
     expect(card.previewSrc).toBeUndefined();
+    expect(card.source).toBe('fvc');
     expect(untoken(card.url)).toBe('https://www.fvc.test/video/33018/full-title/');
   });
 
