@@ -5,6 +5,7 @@ describe('validateEnv', () => {
     JWT_SECRET: 'secret',
     APP_PASSCODE: '0000',
     XMD: 'https://example.com',
+    HF: 'https://example.org',
     CORS_ORIGIN: 'http://localhost:4200',
     MONGODB_URI: 'mongodb+srv://user:pass@cluster.mongodb.net/gynarchy',
   };
@@ -19,6 +20,7 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ JWT_SECRET: 'x', APP_PASSCODE: 'y', CORS_ORIGIN: 'http://localhost:4200' })).toThrow(
       'XMD is required',
     );
+    expect(() => validateEnv({ ...valid, HF: '' })).toThrow('HF is required');
     expect(() => validateEnv({ ...valid, CORS_ORIGIN: '' })).toThrow('CORS_ORIGIN is required');
     expect(() => validateEnv({ ...valid, MONGODB_URI: '' })).toThrow('MONGODB_URI is required');
   });
