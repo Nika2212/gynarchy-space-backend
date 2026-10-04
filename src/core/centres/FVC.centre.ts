@@ -28,9 +28,4 @@ export class FVCCentre extends KtPlayerCentre {
   protected pickThumbnail(attributes: Record<string, string>): string | undefined {
     return attributes['data-original'] || attributes['data-webp'] || undefined;
   }
-
-  // FVC cards carry a short muted mp4 teaser in data-preview.
-  protected pickPreview(attributes: Record<string, string>): string | undefined {
-    return attributes['data-preview'] || undefined;
-  }
 }

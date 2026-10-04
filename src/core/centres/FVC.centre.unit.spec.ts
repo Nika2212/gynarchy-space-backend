@@ -81,7 +81,7 @@ describe('FVCCentre (unit)', () => {
     );
   });
 
-  it('parses cards with the full title, five screenshots, and a preview', async () => {
+  it('parses cards with the full title and five screenshots, ignoring the mp4 preview', async () => {
     const centre = new FVCCentre(config('https://www.fvc.test/'));
     http.get.mockResolvedValue({ data: SEARCH_HTML });
 
@@ -93,7 +93,7 @@ describe('FVCCentre (unit)', () => {
     expect(card.thumbnailSrc.map(untoken)).toEqual(
       [1, 2, 3, 4, 5].map((n) => `https://www.fvc.test/contents/videos_screenshots/33000/33018/320x180/${n}.jpg`),
     );
-    expect(untoken(card.previewSrc)).toBe('https://www.fvc.test/get_file/1/abc/33000/33018/33018_preview.mp4/');
+    expect(card.previewSrc).toBeUndefined();
     expect(untoken(card.url)).toBe('https://www.fvc.test/video/33018/full-title/');
   });
 
