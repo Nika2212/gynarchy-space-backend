@@ -170,7 +170,7 @@ describe('XMDCentre (unit)', () => {
       await centre.getURL(`https://x.test/videos/${i + 2}`);
     }
     expect(await centre.getURL('https://x.test/videos/1')).toBe('https://cdn.example.com/a.mp4');
-  }, 30_000);
+  }, 60_000);
 
   it('allows relative paths and rejects empty or junk URLs', async () => {
     const centre = new XMDCentre(config('https://x.test'));

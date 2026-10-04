@@ -245,7 +245,8 @@ export abstract class BaseCentre implements OnModuleDestroy {
         const rawPreview = this.pickPreview(imageAttributes);
         const preview = rawPreview ? this.toAbsoluteHTTPURL(rawPreview) : undefined;
 
-        const href = node.find('a').first().attr('href');
+        const link = node.find('a').first();
+        const href = link.attr('href');
         const url = href ? this.toAbsoluteHTTPURL(href) : undefined;
         if (!url) {
           return;
@@ -254,7 +255,7 @@ export abstract class BaseCentre implements OnModuleDestroy {
         const identifier = encryptURLToShortToken(url);
 
         results.push({
-          title: node.find('strong.title').text().trim(),
+          title: link.attr('title')?.trim() || node.find('strong.title').text().trim(),
           duration: timeToMS(node.find('.duration').text().trim()),
           postedAt: node.find('.added').text().trim(),
           thumbnailSrc: this.expandScreenshots(thumb).map((shot) => {

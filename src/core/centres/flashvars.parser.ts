@@ -8,7 +8,10 @@ class FlashvarsParseError extends Error {
   }
 }
 
-const FLASHVARS_ASSIGN = /(?:(?:var|let|const)\s+)?(?:window\.)?flashvars\s*=\s*\{/i;
+const DEFAULT_FLASHVARS_NAME = 'flashvars';
+// kt_player('kt_player', swf, width, height, <flashvars variable>); some sites rename the variable on every page load.
+const KT_PLAYER_CALL =
+  /kt_player\s*\(\s*(['"])[^'"]*\1\s*,\s*(['"])[^'"]*\2\s*,\s*(['"])[^'"]*\3\s*,\s*(['"])[^'"]*\4\s*,\s*([A-Za-z_$][\w$]*)\s*\)/g;
 
 // Finds flashvars in page HTML and parses them into a plain object.
 export function parseFlashvarsFromHtml(html: string): Record<string, unknown> {
@@ -16,29 +19,45 @@ export function parseFlashvarsFromHtml(html: string): Record<string, unknown> {
     throw new FlashvarsParseError('flashvars not found');
   }
 
-  for (const source of collectFlashvarsSources(html)) {
-    const literal = extractFlashvarsObjectLiteral(source);
-    if (!literal) {
-      continue;
-    }
+  const assignments = findFlashvarsNames(html).map(toAssignPattern);
 
-    const parsed = parseFlashvarsObjectLiteral(literal);
-    if (parsed) {
-      return parsed;
+  for (const source of collectFlashvarsSources(html, assignments)) {
+    for (const assignment of assignments) {
+      const literal = extractFlashvarsObjectLiteral(source, assignment);
+      if (!literal) {
+        continue;
+      }
+
+      const parsed = parseFlashvarsObjectLiteral(literal);
+      if (parsed) {
+        return parsed;
+      }
     }
   }
 
   throw new FlashvarsParseError('flashvars not found');
 }
 
+// Lists the variable names passed to kt_player, then the conventional `flashvars`.
+function findFlashvarsNames(html: string): string[] {
+  const names = Array.from(html.matchAll(KT_PLAYER_CALL), (match) => match[5]);
+  return [...new Set([...names, DEFAULT_FLASHVARS_NAME])];
+}
+
+// Builds a matcher for `var <name> = {`, `window.<name> = {`, or `<name> = {`.
+function toAssignPattern(name: string): RegExp {
+  const escaped = name.replace(/\$/g, '\\$');
+  return new RegExp(`(?:(?:var|let|const)\\s+)?(?:window\\.)?(?<![\\w$])${escaped}\\s*=\\s*\\{`, 'i');
+}
+
 // Collects script bodies that look like they assign flashvars.
-function collectFlashvarsSources(html: string): string[] {
+function collectFlashvarsSources(html: string, assignments: RegExp[]): string[] {
   const $ = cheerio.load(html);
   const sources: string[] = [];
 
   $('script').each((_, el) => {
     const text = $(el).html();
-    if (text && FLASHVARS_ASSIGN.test(text)) {
+    if (text && assignments.some((assignment) => assignment.test(text))) {
       sources.push(text);
     }
   });
@@ -51,8 +70,8 @@ function collectFlashvarsSources(html: string): string[] {
 }
 
 // Cuts the `{ ... }` object literal out of a flashvars assignment.
-function extractFlashvarsObjectLiteral(source: string): string | null {
-  const match = source.match(FLASHVARS_ASSIGN);
+function extractFlashvarsObjectLiteral(source: string, assignment: RegExp): string | null {
+  const match = source.match(assignment);
   if (!match || match.index === undefined) {
     return null;
   }

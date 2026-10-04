@@ -11,6 +11,7 @@ import { PreviewsController } from './controllers/previews.controller';
 import { SecurityController } from './controllers/security.controller';
 import { BaseCentre } from './core/centres/base.centre';
 import { CENTRES, CentreRegistry } from './core/centres/centre.registry';
+import { FVCCentre } from './core/centres/FVC.centre';
 import { HFCentre } from './core/centres/HF.centre';
 import { XMDCentre } from './core/centres/XMD.centre';
 import { SecurityGuard } from './core/security.guard';
@@ -76,9 +77,10 @@ export function mongoOptions(configService: ConfigService) {
     SecurityGuard,
     XMDCentre,
     HFCentre,
+    FVCCentre,
     {
       provide: CENTRES,
-      inject: [XMDCentre, HFCentre],
+      inject: [XMDCentre, HFCentre, FVCCentre],
       useFactory: (...centres: BaseCentre[]) => centres,
     },
     CentreRegistry,

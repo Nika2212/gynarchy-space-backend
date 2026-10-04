@@ -50,6 +50,22 @@ describe('parseFlashvarsFromHtml', () => {
     expect(parseFlashvarsFromHtml(html).video_url).toBe('https://x.test/v.mp4');
   });
 
+  it('follows a randomly named flashvars variable passed to kt_player', () => {
+    const html = `
+      <script>
+        var other = { video_url: 'https://x.test/wrong.mp4' };
+        var tc7ff1901fc = { video_id: '16971', video_url: 'function/0/https://x.test/v.mp4/' };
+        window['player_obj'] = kt_player('kt_player', 'https://x.test/kt_player.swf', '100%', '100%', tc7ff1901fc);
+      </script>
+    `;
+
+    expect(parseFlashvarsFromHtml(html)).toEqual({ video_id: '16971', video_url: 'function/0/https://x.test/v.mp4/' });
+  });
+
+  it('does not match a variable that only ends with the flashvars name', () => {
+    expect(() => parseFlashvarsFromHtml('<script>var notflashvars = { a: 1 };</script>')).toThrow('flashvars not found');
+  });
+
   it('does not execute expressions inside flashvars', () => {
     const html = `
       <script>

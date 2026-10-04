@@ -1,6 +1,6 @@
 import { parseCorsOrigins } from './http';
 
-const REQUIRED_KEYS = ['JWT_SECRET', 'APP_PASSCODE', 'XMD', 'HF', 'CORS_ORIGIN', 'MONGODB_URI'] as const;
+const REQUIRED_KEYS = ['JWT_SECRET', 'APP_PASSCODE', 'XMD', 'HF', 'FVC', 'CORS_ORIGIN', 'MONGODB_URI'] as const;
 
 // Checks required env vars and rejects the app boot if any are missing or invalid.
 export function validateEnv(config: Record<string, unknown>): Record<string, unknown> {

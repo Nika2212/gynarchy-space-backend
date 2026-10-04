@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, GatewayTimeoutException } from '@nestjs/common';
 import type { IMediaInfo } from '../../shared/interfaces/media-info.interface';
 import { PER_PAGE_SIZE } from '../../shared/paging';
 import type { BaseCentre } from './base.centre';
@@ -56,6 +56,48 @@ describe('CentreRegistry', () => {
     const out = await registry.search('k', 1);
 
     expect(out.medias.map((m) => m.identifier)).toEqual(['x1', 'x2', 'x3']);
+  });
+
+  it('does not report the last page while a centre is missing from it', async () => {
+    hf.mockRejectedValue(new Error('down'));
+
+    await expect(registry.search('k', 1)).resolves.toMatchObject({ isLastPage: false });
+  });
+
+  describe('deadline', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('skips a centre that takes longer than 5 seconds and returns the others', async () => {
+      hf.mockReturnValue(new Promise((resolve) => setTimeout(() => resolve([card('late')]), 10_000)));
+
+      const pending = registry.search('k', 1);
+      await jest.advanceTimersByTimeAsync(5_000);
+      const out = await pending;
+
+      expect(out.medias.map((m) => m.identifier)).toEqual(['x1', 'x2', 'x3']);
+      expect(out.isLastPage).toBe(false);
+    });
+
+    it('waits for a centre that answers just inside the deadline', async () => {
+      hf.mockReturnValue(new Promise((resolve) => setTimeout(() => resolve([card('h1')]), 4_900)));
+
+      const pending = registry.search('k', 1);
+      await jest.advanceTimersByTimeAsync(4_900);
+
+      await expect(pending).resolves.toMatchObject({ medias: [card('x1'), card('h1'), card('x2'), card('x3')] });
+    });
+
+    it('fails with 504 when every centre is too slow', async () => {
+      const slow = () => new Promise((resolve) => setTimeout(() => resolve([]), 10_000));
+      xmd.mockImplementation(slow);
+      hf.mockImplementation(slow);
+
+      const pending = registry.search('k', 1);
+      const assertion = expect(pending).rejects.toBeInstanceOf(GatewayTimeoutException);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    });
   });
 
   it('throws the first error when every centre fails', async () => {

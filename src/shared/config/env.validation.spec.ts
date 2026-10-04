@@ -6,6 +6,7 @@ describe('validateEnv', () => {
     APP_PASSCODE: '0000',
     XMD: 'https://example.com',
     HF: 'https://example.org',
+    FVC: 'https://example.net',
     CORS_ORIGIN: 'http://localhost:4200',
     MONGODB_URI: 'mongodb+srv://user:pass@cluster.mongodb.net/gynarchy',
   };
@@ -21,6 +22,7 @@ describe('validateEnv', () => {
       'XMD is required',
     );
     expect(() => validateEnv({ ...valid, HF: '' })).toThrow('HF is required');
+    expect(() => validateEnv({ ...valid, FVC: '' })).toThrow('FVC is required');
     expect(() => validateEnv({ ...valid, CORS_ORIGIN: '' })).toThrow('CORS_ORIGIN is required');
     expect(() => validateEnv({ ...valid, MONGODB_URI: '' })).toThrow('MONGODB_URI is required');
   });

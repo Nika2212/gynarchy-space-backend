@@ -16,13 +16,14 @@ describe('App (e2e)', () => {
     if (
       !process.env.XMD ||
       !process.env.HF ||
+      !process.env.FVC ||
       !process.env.JWT_SECRET ||
       !process.env.APP_PASSCODE ||
       !process.env.CORS_ORIGIN ||
       !process.env.MONGODB_URI
     ) {
       throw new Error(
-        'XMD, HF, JWT_SECRET, APP_PASSCODE, CORS_ORIGIN, and MONGODB_URI must be set in .env for e2e',
+        'XMD, HF, FVC, JWT_SECRET, APP_PASSCODE, CORS_ORIGIN, and MONGODB_URI must be set in .env for e2e',
       );
     }
   });

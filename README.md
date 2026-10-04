@@ -19,13 +19,14 @@ Fill `.env`:
 | `APP_PASSCODE` | yes | Shared login passcode |
 | `XMD` | yes | XMD origin base URL (`https://...`) |
 | `HF` | yes | HF origin base URL (`https://...`) |
+| `FVC` | yes | FVC origin base URL (`https://...`) |
 | `CORS_ORIGIN` | yes | Frontend origin(s), comma-separated. Must match the UI exactly, including port. Example: `http://localhost:4200` |
 | `TRUST_PROXY` | no | `0` locally. `1` (or hop count) behind Nginx/Caddy |
 | `MONGODB_URI` | yes | MongoDB Atlas SRV URL (`mongodb+srv://...`) |
 | `MONGODB_USERNAME` | no | Atlas user |
 | `MONGODB_PASSWORD` | no | Atlas password |
 
-Search fans out to every centre (XMD, HF) in parallel and interleaves the cards; a page is the last one once every centre returns a short page, and one failing centre only drops its own cards. Searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
+Search fans out to every centre (XMD, HF, FVC) in parallel and interleaves the cards; a page is the last one once every centre returns a short page, and a centre that fails or takes longer than 5 seconds only drops its own cards (that page is then never reported as the last one). Searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
 
 ```bash
 npm run start:dev
