@@ -1,3 +1,4 @@
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
@@ -58,6 +59,7 @@ describe('MediaRepository', () => {
     const module = await Test.createTestingModule({
       providers: [
         MediaRepository,
+        { provide: CentreRegistry, useValue: { findByURL: () => ({ source: 'xmd' }) } },
         { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
         {
           provide: getModelToken(MediaDocument.name),

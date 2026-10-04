@@ -1,7 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import { PassThrough } from 'stream';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import type { BaseCentre } from '../core/centres/base.centre';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { encryptURLToShortToken } from '../shared/url-token';
 import { MediaStreamService } from './media-stream.service';
 
@@ -28,7 +29,7 @@ describe('MediaStreamService', () => {
     getURL: jest.fn().mockResolvedValue('https://cdn.example.com/v.mp4'),
     isAllowedAssetURL: jest.fn().mockReturnValue(true),
   };
-  const service = new MediaStreamService(xmdCentre as unknown as XMDCentre);
+  const service = new MediaStreamService(new CentreRegistry([xmdCentre as unknown as BaseCentre]));
   const originURL = 'https://xmegadrive.com/videos/1';
   const id = encryptURLToShortToken(originURL);
 
@@ -131,5 +132,38 @@ describe('MediaStreamService', () => {
     res.emit('close');
     await pending;
     expect(capturedSignal?.aborted).toBe(true);
+  });
+});
+
+describe('MediaStreamService.preview', () => {
+  const centre = {
+    getURL: jest.fn(),
+    isAllowedAssetURL: jest.fn((url: string) => new URL(url).hostname === 'heavyfetish.com'),
+  };
+  const service = new MediaStreamService(new CentreRegistry([centre as unknown as BaseCentre]));
+
+  beforeEach(() => {
+    mockedAxios.mockReset();
+    centre.getURL.mockClear();
+  });
+
+  it('rejects a missing, invalid, or foreign preview id', async () => {
+    await expect(service.preview('', '', mockResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.preview('nope', '', mockResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+    const foreign = encryptURLToShortToken('https://evil.example/p.mp4');
+    await expect(service.preview(foreign, '', mockResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
+    expect(mockedAxios).not.toHaveBeenCalled();
+  });
+
+  it('pipes the preview URL directly without a page lookup', async () => {
+    const previewURL = 'https://heavyfetish.com/get_file/27/abc/131000/131503/131503_preview.mp4/';
+    mockedAxios.mockResolvedValue({ status: 200, data: new PassThrough(), headers: { 'content-type': 'video/mp4' } });
+
+    const res = mockResponse();
+    await service.preview(encryptURLToShortToken(previewURL), 'bytes=0-', res as never);
+
+    expect(centre.getURL).not.toHaveBeenCalled();
+    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ url: previewURL, headers: { Range: 'bytes=0-' } }));
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

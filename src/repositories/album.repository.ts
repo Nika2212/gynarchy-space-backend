@@ -69,6 +69,7 @@ export class AlbumRepository {
       identifier: encryptText(identifier, secret),
       title: encryptText(media.title, secret),
       thumbnailSrc: encryptText(JSON.stringify(media.thumbnailSrc), secret),
+      previewSrc: encryptText(media.previewSrc ?? '', secret),
       postedAt: encryptText(media.postedAt, secret),
       duration: media.duration,
       addedAt: existing?.addedAt ?? new Date(),
@@ -131,8 +132,13 @@ export class AlbumRepository {
       postedAt: tryDecryptText(item.postedAt, secret) ?? '',
       duration: item.duration ?? 0,
       thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(item.thumbnailSrc, secret)),
+      ...this.previewOf(tryDecryptText(item.previewSrc, secret)),
       addedAt: new Date(item.addedAt),
     };
+  }
+
+  private previewOf(raw: string | undefined): Pick<IAlbumMedia, 'previewSrc'> {
+    return raw ? { previewSrc: raw } : {};
   }
 
   private parseThumbnailSrc(raw: string | undefined): string[] {

@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import { CENTRES, CentreRegistry } from '../core/centres/centre.registry';
 import { PER_PAGE_SIZE } from '../shared/paging';
 import { MediaRepository } from '../repositories/media.repository';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
@@ -49,9 +49,10 @@ describe('MediaService', () => {
       providers: [
         MediaService,
         {
-          provide: XMDCentre,
-          useValue: { search },
+          provide: CENTRES,
+          useValue: [{ search, source: 'xmd' }],
         },
+        CentreRegistry,
         {
           provide: MediaRepository,
           useValue: {
@@ -69,7 +70,7 @@ describe('MediaService', () => {
     service = module.get(MediaService);
   });
 
-  it('findAll returns the XMD page as-is with paging meta', async () => {
+  it('findAll returns a single centre page as-is with paging meta', async () => {
     const medias = [mockMedia({ identifier: 'x' })];
     search.mockResolvedValue(medias);
 
@@ -88,7 +89,7 @@ describe('MediaService', () => {
     expect(out.meta.isLastPage).toBe(false);
   });
 
-  it('propagates errors from XMDCentre.search', async () => {
+  it('propagates errors when every centre fails', async () => {
     search.mockRejectedValue(new BadRequestException('Invalid keyword'));
 
     await expect(service.findAll({ keyword: 'k', page: 1, sort: '', filter: '' })).rejects.toBeInstanceOf(BadRequestException);

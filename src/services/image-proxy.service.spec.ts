@@ -1,7 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import { PassThrough } from 'stream';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import type { BaseCentre } from '../core/centres/base.centre';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { encryptURLToShortToken } from '../shared/url-token';
 import { ImageProxyService } from './image-proxy.service';
 
@@ -20,7 +21,7 @@ function mockResponse() {
 
 describe('ImageProxyService', () => {
   const xmdCentre = { isAllowedAssetURL: jest.fn().mockReturnValue(true) };
-  const service = new ImageProxyService(xmdCentre as unknown as XMDCentre);
+  const service = new ImageProxyService(new CentreRegistry([xmdCentre as unknown as BaseCentre]));
   const publicURL = 'https://cdn.example.com/a.jpg';
   const id = encryptURLToShortToken(publicURL);
 

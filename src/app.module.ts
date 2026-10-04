@@ -7,7 +7,11 @@ import { AlbumsController } from './controllers/albums.controller';
 import { HealthController } from './controllers/health.controller';
 import { ImagesController } from './controllers/images.controller';
 import { MediaController } from './controllers/media.controller';
+import { PreviewsController } from './controllers/previews.controller';
 import { SecurityController } from './controllers/security.controller';
+import { BaseCentre } from './core/centres/base.centre';
+import { CENTRES, CentreRegistry } from './core/centres/centre.registry';
+import { HFCentre } from './core/centres/HF.centre';
 import { XMDCentre } from './core/centres/XMD.centre';
 import { SecurityGuard } from './core/security.guard';
 import { AlbumRepository } from './repositories/album.repository';
@@ -66,11 +70,18 @@ export function mongoOptions(configService: ConfigService) {
       { name: AlbumDocument.name, schema: AlbumSchema },
     ]),
   ],
-  controllers: [HealthController, SecurityController, MediaController, ImagesController, AlbumsController],
+  controllers: [HealthController, SecurityController, MediaController, ImagesController, PreviewsController, AlbumsController],
   providers: [
     SecurityService,
     SecurityGuard,
     XMDCentre,
+    HFCentre,
+    {
+      provide: CENTRES,
+      inject: [XMDCentre, HFCentre],
+      useFactory: (...centres: BaseCentre[]) => centres,
+    },
+    CentreRegistry,
     MediaService,
     MediaStreamService,
     ImageProxyService,

@@ -1,13 +1,13 @@
 import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import type { Response } from 'express';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { isPublicHTTPHost } from '../shared/image-type';
 import { decryptShortTokenToURL } from '../shared/url-token';
 
 @Injectable()
 export class MediaStreamService {
-  constructor(private readonly xmdCentre: XMDCentre) {}
+  constructor(private readonly centreRegistry: CentreRegistry) {}
 
   // Resolves the video URL and pipes the remote stream, including Range support.
   public async stream(id: string, range: string, response: Response): Promise<void> {
@@ -20,11 +20,31 @@ export class MediaStreamService {
       throw new NotFoundException('Invalid media id');
     }
 
-    if (!this.xmdCentre.isAllowedAssetURL(originURL)) {
+    const centre = this.centreRegistry.findByURL(originURL);
+    if (!centre) {
       throw new NotFoundException('Invalid media id');
     }
 
-    const decryptedURL = await this.xmdCentre.getURL(originURL);
+    const decryptedURL = await centre.getURL(originURL);
+    return this.pipe(decryptedURL, range, response);
+  }
+
+  // Pipes a card's short preview video; the id is the preview URL itself, so no page lookup is needed.
+  public async preview(id: string, range: string, response: Response): Promise<void> {
+    if (!id) {
+      throw new NotFoundException('Invalid preview id');
+    }
+
+    const previewURL = decryptShortTokenToURL(id);
+    if (!previewURL || !this.centreRegistry.isAllowedAssetURL(previewURL)) {
+      throw new NotFoundException('Invalid preview id');
+    }
+
+    return this.pipe(previewURL, range, response);
+  }
+
+  // Fetches a remote video and pipes it to the client, forwarding Range so seeking works.
+  private async pipe(decryptedURL: string, range: string, response: Response): Promise<void> {
     const abort = new AbortController();
     // Stops the remote fetch when the client closes the response.
     const onClose = (): void => abort.abort();

@@ -4,4 +4,5 @@ export interface IMediaSnapshot {
   duration: number;
   postedAt: string;
   thumbnailSrc: string[];
+  previewSrc?: string;
 }

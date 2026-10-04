@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsNumber, IsString, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 
 export class MediaSnapshotDTO implements IMediaSnapshot {
@@ -19,4 +19,9 @@ export class MediaSnapshotDTO implements IMediaSnapshot {
   @IsString({ each: true })
   @MaxLength(500, { each: true })
   thumbnailSrc: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  previewSrc?: string;
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
@@ -54,6 +55,7 @@ export class MediaRepository {
   constructor(
     @InjectModel(MediaDocument.name) private readonly mediaModel: Model<MediaDocument>,
     private readonly configService: ConfigService,
+    private readonly centreRegistry: CentreRegistry,
   ) {}
 
   // Loads every stored media with its flags, most recently changed first.
@@ -169,15 +171,17 @@ export class MediaRepository {
 
   // Encrypts the card fields before they are stored.
   private encryptCatalog(identifier: string, media: IMediaSnapshot, secret: string) {
+    const originURL = decryptShortTokenToURL(identifier);
     return {
       identifier: encryptText(identifier, secret),
-      url: encryptText(decryptShortTokenToURL(identifier) ?? `/media/${identifier}`, secret),
+      url: encryptText(originURL ?? `/media/${identifier}`, secret),
       title: encryptText(media.title, secret),
       description: encryptText('', secret),
       thumbnailSrc: encryptText(JSON.stringify(media.thumbnailSrc), secret),
+      previewSrc: encryptText(media.previewSrc ?? '', secret),
       postedAt: encryptText(media.postedAt, secret),
       duration: media.duration,
-      source: 'xmd',
+      source: (originURL && this.centreRegistry.findByURL(originURL)?.source) || 'unknown',
     };
   }
 
@@ -196,6 +200,7 @@ export class MediaRepository {
       postedAt: tryDecryptText(row.postedAt, secret) ?? '',
       duration: row.duration ?? 0,
       thumbnailSrc: this.parseThumbnailSrc(tryDecryptText(row.thumbnailSrc, secret)),
+      ...this.previewOf(tryDecryptText(row.previewSrc, secret)),
       isLiked: row.isLiked,
       isFavorite: row.isFavorite,
       isDownloaded: row.isDownloaded ?? false,
@@ -205,6 +210,11 @@ export class MediaRepository {
       watchedTimes: row.watchedTimes ?? 0,
       watchPositionAt: row.watchPositionAt ?? undefined,
     };
+  }
+
+  // Returns the preview field only when one is stored, so cards without a preview keep their old shape.
+  private previewOf(raw: string | undefined): Pick<IMediaInfo, 'previewSrc'> {
+    return raw ? { previewSrc: raw } : {};
   }
 
   // Parses stored thumbnail JSON into a string array, or empty on corrupt data.

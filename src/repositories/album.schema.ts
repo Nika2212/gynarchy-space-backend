@@ -16,6 +16,9 @@ export class AlbumItem {
   @Prop({ required: true, default: '' })
   thumbnailSrc: string;
 
+  @Prop({ default: '' })
+  previewSrc: string;
+
   @Prop({ required: true, default: '' })
   postedAt: string;
 

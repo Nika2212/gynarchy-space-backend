@@ -1,13 +1,13 @@
 import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import type { Response } from 'express';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { isPublicHTTPHost, normalizeAllowedImageType } from '../shared/image-type';
 import { decryptShortTokenToURL } from '../shared/url-token';
 
 @Injectable()
 export class ImageProxyService {
-  constructor(private readonly xmdCentre: XMDCentre) {}
+  constructor(private readonly centreRegistry: CentreRegistry) {}
 
   // Fetches an allowed thumbnail URL and pipes the image bytes to the client.
   public async proxy(id: string, response: Response): Promise<void> {
@@ -24,7 +24,7 @@ export class ImageProxyService {
       throw new BadRequestException('Invalid image url');
     }
 
-    if (!this.xmdCentre.isAllowedAssetURL(decryptedURL)) {
+    if (!this.centreRegistry.isAllowedAssetURL(decryptedURL)) {
       throw new BadRequestException('Invalid image url');
     }
 

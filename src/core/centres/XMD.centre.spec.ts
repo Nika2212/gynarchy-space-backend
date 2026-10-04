@@ -2,7 +2,8 @@ require('dotenv').config({ path: '.env' });
 
 import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { extractBalancedObject, FlashvarsLiteralParser, parseFlashvarsFromHtml, XMDCentre } from './XMD.centre';
+import { extractBalancedObject, FlashvarsLiteralParser, parseFlashvarsFromHtml } from './flashvars.parser';
+import { XMDCentre } from './XMD.centre';
 
 const mockConfig = new Map<string, string>();
 

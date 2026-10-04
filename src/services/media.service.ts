@@ -1,10 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { XMDCentre } from '../core/centres/XMD.centre';
+import { CentreRegistry } from '../core/centres/centre.registry';
 import { MediaRepository } from '../repositories/media.repository';
-import { PER_PAGE_SIZE } from '../shared/paging';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
-import { IMediaInfo } from '../shared/interfaces/media-info.interface';
 import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
 import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { IMeta } from '../shared/interfaces/meta.interface';
@@ -13,16 +11,16 @@ import { IFindAll } from '../shared/interfaces/query.interface';
 @Injectable()
 export class MediaService {
   constructor(
-    private readonly xmdCentre: XMDCentre,
+    private readonly centreRegistry: CentreRegistry,
     private readonly mediaRepository: MediaRepository,
   ) {}
 
-  // Searches XMD and returns one page of results. Nothing is read from or written to the database.
+  // Searches every centre and returns one merged page of results. Nothing is read from or written to the database.
   public async findAll(query: IFindAll): Promise<IMediaContainer> {
-    const medias: IMediaInfo[] = await this.xmdCentre.search(query.keyword, query.page);
+    const { medias, isLastPage } = await this.centreRegistry.search(query.keyword, query.page);
     const meta: IMeta = {
       currentPage: query.page,
-      isLastPage: medias.length < PER_PAGE_SIZE,
+      isLastPage,
     };
 
     return {
