@@ -1,14 +1,10 @@
 import { CentreRegistry } from '../core/centres/centre.registry';
-import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
 import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { encryptURLToShortToken } from '../shared/url-token';
 import { MediaRepository } from './media.repository';
 import { MediaDocument } from './media.schema';
-
-const SECRET = 'jwt-secret';
 
 const SNAPSHOT: IMediaSnapshot = {
   title: 'Title',
@@ -19,11 +15,11 @@ const SNAPSHOT: IMediaSnapshot = {
 
 function storedRow(identifier: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    identifier: encryptText(identifier, SECRET),
-    title: encryptText('Stored', SECRET),
-    description: encryptText('', SECRET),
-    postedAt: encryptText('', SECRET),
-    thumbnailSrc: encryptText('[]', SECRET),
+    identifier,
+    title: 'Stored',
+    description: '',
+    postedAt: '',
+    thumbnailSrc: '[]',
     duration: 0,
     isLiked: false,
     isFavorite: false,
@@ -60,7 +56,6 @@ describe('MediaRepository', () => {
       providers: [
         MediaRepository,
         { provide: CentreRegistry, useValue: { findByURL: () => ({ source: 'xmd' }) } },
-        { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
         {
           provide: getModelToken(MediaDocument.name),
           useValue: { find, findOne, deleteOne, deleteMany, updateMany, create },
@@ -71,22 +66,22 @@ describe('MediaRepository', () => {
     repository = module.get(MediaRepository);
   });
 
-  it('loads the library with flags, skips corrupt rows, and parses thumbnails', async () => {
+  it('loads the library with flags, skips rows without an identifier, and parses thumbnails', async () => {
     execFind.mockResolvedValue([
       storedRow('a', {
         isLiked: true,
         likedAt: new Date('2026-02-02'),
         isDownloaded: undefined,
-        thumbnailSrc: encryptText('["/images/a"]', SECRET),
+        thumbnailSrc: '["/images/a"]',
         watchedAt: new Date('2026-01-01'),
         watchPositionAt: 5_000,
         watchedTimes: undefined,
         duration: undefined,
       }),
-      storedRow('b', { thumbnailSrc: encryptText('{"not":"array"}', SECRET), title: 'corrupt', description: 'corrupt', postedAt: 'corrupt' }),
-      storedRow('c', { thumbnailSrc: encryptText('not json', SECRET) }),
+      storedRow('b', { thumbnailSrc: '{"not":"array"}', title: undefined, description: undefined, postedAt: undefined }),
+      storedRow('c', { thumbnailSrc: 'not json' }),
       storedRow('d', { thumbnailSrc: '' }),
-      storedRow('e', { identifier: 'corrupt' }),
+      storedRow('e', { identifier: '' }),
     ]);
 
     const library = await repository.findLibrary();
@@ -120,10 +115,17 @@ describe('MediaRepository', () => {
     await expect(repository.toggleLike(id, SNAPSHOT)).resolves.toMatchObject({ identifier: id, isLiked: true, isFavorite: false });
 
     const stored = create.mock.calls[0][0];
-    expect(stored).toMatchObject({ identifierHash: hashIdentifier(id, SECRET), isLiked: true, likedAt: expect.any(Date), duration: 61_000 });
-    expect(tryDecryptText(stored.title, SECRET)).toBe('Title');
-    expect(tryDecryptText(stored.url, SECRET)).toBe('https://example.com/v');
-    expect(JSON.parse(tryDecryptText(stored.thumbnailSrc, SECRET) as string)).toEqual(['/images/a', '/images/b']);
+    expect(stored).toMatchObject({
+      identifier: id,
+      isLiked: true,
+      likedAt: expect.any(Date),
+      duration: 61_000,
+      title: 'Title',
+      url: 'https://example.com/v',
+      source: 'xmd',
+    });
+    expect(JSON.parse(stored.thumbnailSrc)).toEqual(['/images/a', '/images/b']);
+    expect(stored).not.toHaveProperty('identifierHash');
   });
 
   it('falls back to a media path when the identifier is not a URL token', async () => {
@@ -131,7 +133,7 @@ describe('MediaRepository', () => {
 
     await repository.toggleFavorite('raw-id', SNAPSHOT);
 
-    expect(tryDecryptText(create.mock.calls[0][0].url, SECRET)).toBe('/media/raw-id');
+    expect(create.mock.calls[0][0].url).toBe('/media/raw-id');
     expect(create.mock.calls[0][0]).toMatchObject({ isFavorite: true, favoritedAt: expect.any(Date) });
   });
 
@@ -142,7 +144,7 @@ describe('MediaRepository', () => {
     await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toMatchObject({ isLiked: true, isFavorite: true });
 
     expect(row.likedAt).toEqual(expect.any(Date));
-    expect(tryDecryptText(row.title as string, SECRET)).toBe('Title');
+    expect(row.title).toBe('Title');
     expect(row.save).toHaveBeenCalled();
     expect(deleteOne).not.toHaveBeenCalled();
   });
@@ -154,7 +156,7 @@ describe('MediaRepository', () => {
     await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toMatchObject({ identifier: 'raw-id', isLiked: false });
 
     expect(row.likedAt).toBeNull();
-    expect(deleteOne).toHaveBeenCalledWith({ identifierHash: hashIdentifier('raw-id', SECRET) });
+    expect(deleteOne).toHaveBeenCalledWith({ identifier: 'raw-id' });
     expect(row.save).not.toHaveBeenCalled();
   });
 
@@ -190,7 +192,7 @@ describe('MediaRepository', () => {
       watchPositionAt: 4_500,
       watchedAt: expect.any(Date),
     });
-    expect(tryDecryptText(row.postedAt as string, SECRET)).toBe('2 days ago');
+    expect(row.postedAt).toBe('2 days ago');
     expect(row.save).toHaveBeenCalled();
   });
 
@@ -211,7 +213,7 @@ describe('MediaRepository', () => {
     const historyOnly = storedRow('h', { watchedAt: new Date(), watchedTimes: 3, watchPositionAt: 9_000 });
     execFindOne.mockResolvedValueOnce(historyOnly);
     await expect(repository.clearWatchHistory('h')).resolves.toMatchObject({ identifier: 'h', watchedAt: null, watchedTimes: 0, watchPositionAt: null });
-    expect(deleteOne).toHaveBeenCalledWith({ identifierHash: hashIdentifier('h', SECRET) });
+    expect(deleteOne).toHaveBeenCalledWith({ identifier: 'h' });
 
     const liked = storedRow('l', { isLiked: true, watchedAt: new Date(), watchedTimes: 1, watchPositionAt: 9_000 });
     execFindOne.mockResolvedValueOnce(liked);
@@ -227,8 +229,14 @@ describe('MediaRepository', () => {
     expect(updateMany).toHaveBeenCalledWith({ watchedAt: { $ne: null } }, { watchedAt: null, watchedTimes: 0, watchPositionAt: null });
   });
 
-  it('returns undefined flags for a stored row whose identifier cannot be decrypted', async () => {
-    create.mockImplementation(async (doc: Record<string, unknown>) => ({ ...doc, identifier: 'corrupt' }));
+  it('looks rows up by their identifier', async () => {
+    execFindOne.mockResolvedValue(null);
+    await repository.findDownloadSize('raw-id');
+    expect(findOne).toHaveBeenCalledWith({ identifier: 'raw-id', isDownloaded: true });
+  });
+
+  it('returns undefined flags for a stored row without an identifier', async () => {
+    create.mockImplementation(async (doc: Record<string, unknown>) => ({ ...doc, identifier: '' }));
     execFindOne.mockResolvedValue(null);
 
     await expect(repository.toggleLike('raw-id', SNAPSHOT)).resolves.toBeUndefined();

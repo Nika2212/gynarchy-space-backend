@@ -1,12 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-// One media saved in an album. Card fields are encrypted like media rows.
+// One media saved in an album, with the card shown in the album.
 @Schema({ _id: false })
 export class AlbumItem {
-  @Prop({ required: true })
-  identifierHash: string;
-
   @Prop({ required: true })
   identifier: string;
 
@@ -31,7 +28,7 @@ export class AlbumItem {
 
 export const AlbumItemSchema = SchemaFactory.createForClass(AlbumItem);
 
-// A user-made album: an encrypted name and the media saved in it.
+// A user-made album: its name and the media saved in it.
 @Schema({ collection: 'albums', timestamps: true })
 export class AlbumDocument {
   @Prop({ required: true })

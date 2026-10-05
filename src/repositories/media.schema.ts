@@ -5,9 +5,6 @@ import { HydratedDocument } from 'mongoose';
 @Schema({ collection: 'medias', timestamps: true })
 export class MediaDocument {
   @Prop({ required: true, unique: true, index: true })
-  identifierHash: string;
-
-  @Prop({ required: true })
   identifier: string;
 
   @Prop({ required: true })
@@ -63,7 +60,6 @@ export class MediaDocument {
 
   @Prop({ type: Number, default: null })
   watchPositionAt: number | null;
-
 }
 
 export type MediaModel = HydratedDocument<MediaDocument>;

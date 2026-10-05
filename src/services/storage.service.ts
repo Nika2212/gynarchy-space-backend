@@ -13,7 +13,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { hashIdentifier } from '../shared/field-crypto';
+import { hashIdentifier } from '../shared/identifier-hash';
 import { IStorageUsage } from '../shared/interfaces/download.interface';
 
 const KEY_PREFIX = 'media/';

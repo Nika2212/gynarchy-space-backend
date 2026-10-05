@@ -32,7 +32,7 @@ Fill `.env`:
 | `B2_APPLICATION_KEY` | no | Application key |
 | `STORAGE_LIMIT_GB` | no | Space budget for downloads, default `512` |
 
-Search fans out to every centre (XMD, HF, FVC) in parallel and interleaves the cards; a page is the last one once every centre returns a short page, and a centre that fails or takes longer than 5 seconds only drops its own cards (that page is then never reported as the last one). Searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
+Search fans out to every centre (XMD, HF, FVC) in parallel and interleaves the cards; a page is the last one once every centre returns a short page, and a centre that fails or takes longer than 5 seconds only drops its own cards (that page is then never reported as the last one). Searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Rows are stored in plain text and looked up by their media identifier. Downloaded files in the bucket are named by an HMAC of the identifier (`JWT_SECRET`), so the bucket listing reveals nothing about the videos.
 
 ```bash
 npm run start:dev

@@ -1,13 +1,9 @@
 import { CentreRegistry } from '../core/centres/centre.registry';
-import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
-import { encryptText, hashIdentifier, tryDecryptText } from '../shared/field-crypto';
 import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { AlbumRepository } from './album.repository';
 import { AlbumDocument } from './album.schema';
-
-const SECRET = 'jwt-secret';
 
 const SNAPSHOT: IMediaSnapshot = {
   title: 'Title',
@@ -18,11 +14,10 @@ const SNAPSHOT: IMediaSnapshot = {
 
 function storedItem(identifier: string, addedAt: Date, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    identifierHash: hashIdentifier(identifier, SECRET),
-    identifier: encryptText(identifier, SECRET),
-    title: encryptText('Stored', SECRET),
-    thumbnailSrc: encryptText('["/images/x"]', SECRET),
-    postedAt: encryptText('', SECRET),
+    identifier,
+    title: 'Stored',
+    thumbnailSrc: '["/images/x"]',
+    postedAt: '',
     duration: 10,
     addedAt,
     ...overrides,
@@ -32,7 +27,7 @@ function storedItem(identifier: string, addedAt: Date, overrides: Record<string,
 function storedAlbum(name: string, items: Record<string, unknown>[] = [], overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     _id: 'album-1',
-    name: encryptText(name, SECRET),
+    name,
     items,
     createdAt: new Date('2026-01-01'),
     save: jest.fn(),
@@ -63,27 +58,22 @@ describe('AlbumRepository', () => {
     create.mockImplementation(async (doc: Record<string, unknown>) => ({ _id: 'new-id', ...doc }));
 
     const module = await Test.createTestingModule({
-      providers: [
-        AlbumRepository,
-        { provide: CentreRegistry, useValue: { findByURL: () => undefined } },
-        { provide: ConfigService, useValue: { getOrThrow: () => SECRET } },
-        { provide: getModelToken(AlbumDocument.name), useValue: { find, findById, deleteOne, countDocuments, create } },
-      ],
+      providers: [AlbumRepository, { provide: CentreRegistry, useValue: { findByURL: () => undefined } }, { provide: getModelToken(AlbumDocument.name), useValue: { find, findById, deleteOne, countDocuments, create } }],
     }).compile();
 
     repository = module.get(AlbumRepository);
   });
 
-  it('loads albums newest first with media newest-added first, skipping unreadable albums and items', async () => {
+  it('loads albums newest first with media newest-added first, skipping albums without a name and items without an identifier', async () => {
     execFind.mockResolvedValue([
       storedAlbum('Trips', [
         storedItem('old', new Date('2026-01-01')),
-        storedItem('new', new Date('2026-02-01'), { duration: undefined, title: 'corrupt', postedAt: 'corrupt' }),
-        storedItem('bad', new Date('2026-03-01'), { identifier: 'corrupt' }),
-        storedItem('raw', new Date('2026-01-15'), { thumbnailSrc: encryptText('{"a":1}', SECRET) }),
+        storedItem('new', new Date('2026-02-01'), { duration: undefined, title: undefined, postedAt: undefined }),
+        storedItem('bad', new Date('2026-03-01'), { identifier: '' }),
+        storedItem('raw', new Date('2026-01-15'), { thumbnailSrc: '{"a":1}' }),
         storedItem('junk', new Date('2026-01-10'), { thumbnailSrc: 'corrupt' }),
       ]),
-      storedAlbum('x', [], { name: 'corrupt' }),
+      storedAlbum('x', [], { name: undefined }),
       storedAlbum('Undated', [], { createdAt: undefined }),
     ]);
 
@@ -103,9 +93,9 @@ describe('AlbumRepository', () => {
     await expect(repository.count()).resolves.toBe(3);
   });
 
-  it('creates an album with an encrypted name', async () => {
+  it('creates an album with its name', async () => {
     await expect(repository.create('Road trip')).resolves.toMatchObject({ id: 'new-id', name: 'Road trip', medias: [] });
-    expect(tryDecryptText(create.mock.calls[0][0].name, SECRET)).toBe('Road trip');
+    expect(create.mock.calls[0][0]).toEqual({ name: 'Road trip', items: [] });
   });
 
   it('renames an album, or returns null when it is missing', async () => {
