@@ -13,6 +13,7 @@ import { parsePage } from '../shared/paging';
 import { IDownloadJob, IDownloadSnapshot } from '../shared/interfaces/download.interface';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
 import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
+import { IMediaPlayback } from '../shared/interfaces/media-playback.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
 
 @UseGuards(ThrottlerGuard, SecurityGuard)
@@ -58,13 +59,23 @@ export class MediaController {
 
   @Get(':id')
   @Public()
-  @Throttle({ default: { limit: 300, ttl: 60000 } })
+  // A player sends many Range requests (iOS restarts one on every seek), so the limit is high and a burst over it is refused
+  // for a second only, instead of freezing playback for the global block duration.
+  @Throttle({ default: { limit: 600, ttl: 60000, blockDuration: 1000 } })
   // Streams the video for one media id. Public so a <video src> tag can play it.
   public async findOne(@Req() req: Request, @Res() res: Response): Promise<void> {
     const { id } = req.params;
     const range = req.headers.range as string;
 
     return this.mediaStreamService.stream(id as string, range, res);
+  }
+
+  @Get(':id/playback')
+  // Signed storage link of a downloaded media, so the player streams straight from storage instead of being redirected
+  // through this API on every Range request; null when the media is not downloaded.
+  public async findPlayback(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const payload: IMediaPlayback = { url: await this.downloadService.playbackURL(req.params.id as string) };
+    res.status(200).json(payload);
   }
 
   @Post(':id/download')

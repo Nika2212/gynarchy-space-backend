@@ -22,6 +22,7 @@ describe('MediaController', () => {
   let startDownload: jest.Mock;
   let removeDownload: jest.Mock;
   let downloadSnapshot: jest.Mock;
+  let playbackURL: jest.Mock;
 
   const emptyPayload: IMediaContainer = {
     medias: [],
@@ -42,6 +43,7 @@ describe('MediaController', () => {
     startDownload = jest.fn().mockResolvedValue({ identifier: 'abc', state: 'queued' });
     removeDownload = jest.fn().mockResolvedValue(null);
     downloadSnapshot = jest.fn().mockReturnValue({ jobs: [], storage: { isConfigured: true, usedBytes: 0, limitBytes: 1, freeBytes: 1 } });
+    playbackURL = jest.fn().mockResolvedValue(null);
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [MediaController],
@@ -64,7 +66,7 @@ describe('MediaController', () => {
         },
         {
           provide: DownloadService,
-          useValue: { start: startDownload, remove: removeDownload, snapshot: downloadSnapshot },
+          useValue: { start: startDownload, remove: removeDownload, snapshot: downloadSnapshot, playbackURL },
         },
       ],
     })
@@ -135,6 +137,15 @@ describe('MediaController', () => {
   it('GET /media/:id streams with the Range header', async () => {
     await request(app.getHttpServer()).get('/media/abc').set('Range', 'bytes=0-1').expect(200).expect('stream');
     expect(stream).toHaveBeenCalledWith('abc', 'bytes=0-1', expect.anything());
+  });
+
+  it('GET /media/:id/playback returns the signed storage link of a downloaded media, null otherwise', async () => {
+    await request(app.getHttpServer()).get('/media/abc/playback').expect(200).expect({ url: null });
+
+    playbackURL.mockResolvedValue('https://storage.test/media/hash.mp4?X-Amz-Signature=1');
+    await request(app.getHttpServer()).get('/media/abc/playback').expect(200).expect({ url: 'https://storage.test/media/hash.mp4?X-Amz-Signature=1' });
+    expect(playbackURL).toHaveBeenCalledWith('abc');
+    expect(stream).not.toHaveBeenCalled();
   });
 
   it('POST /media/:id/download queues the download with the card', async () => {
