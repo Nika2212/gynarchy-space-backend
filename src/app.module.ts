@@ -18,6 +18,8 @@ import { XMDCentre } from './core/centres/XMD.centre';
 import { SecurityGuard } from './core/security.guard';
 import { AlbumRepository } from './repositories/album.repository';
 import { AlbumDocument, AlbumSchema } from './repositories/album.schema';
+import { DownloadRepository } from './repositories/download.repository';
+import { DownloadDocument, DownloadSchema } from './repositories/download.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
 import { AlbumService } from './services/album.service';
@@ -73,6 +75,7 @@ export function mongoOptions(configService: ConfigService) {
     MongooseModule.forFeature([
       { name: MediaDocument.name, schema: MediaSchema },
       { name: AlbumDocument.name, schema: AlbumSchema },
+      { name: DownloadDocument.name, schema: DownloadSchema },
     ]),
   ],
   controllers: [HealthController, SecurityController, MediaController, ImagesController, PreviewsController, AlbumsController],
@@ -97,6 +100,7 @@ export function mongoOptions(configService: ConfigService) {
     MediaRepository,
     AlbumService,
     AlbumRepository,
+    DownloadRepository,
     DatabaseIndexesService,
   ],
 })

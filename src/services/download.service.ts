@@ -7,6 +7,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
   OnModuleDestroy,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { Readable } from 'stream';
 import { Observable, Subject } from 'rxjs';
 import { BaseCentre } from '../core/centres/base.centre';
 import { CentreRegistry } from '../core/centres/centre.registry';
+import { DownloadRepository } from '../repositories/download.repository';
+import { DownloadDocument } from '../repositories/download.schema';
 import { MediaFlags, MediaRepository } from '../repositories/media.repository';
 import { isPublicHTTPHost } from '../shared/image-type';
 import { IDownloadEvent } from '../shared/interfaces/download-event.interface';
@@ -65,7 +68,7 @@ interface IDownloadTask {
 }
 
 @Injectable()
-export class DownloadService implements OnModuleDestroy {
+export class DownloadService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(DownloadService.name);
   private readonly tasks = new Map<string, IDownloadTask>();
   private readonly queue: IDownloadTask[] = [];
@@ -79,9 +82,26 @@ export class DownloadService implements OnModuleDestroy {
     private readonly centreRegistry: CentreRegistry,
     private readonly mediaRepository: MediaRepository,
     private readonly storage: StorageService,
+    private readonly downloadRepository: DownloadRepository,
   ) {}
 
-  // Stops every running download when the app shuts down; their multipart uploads are aborted on the next start.
+  // Picks up the downloads a restart interrupted. Pending ones start again from the beginning (StorageService aborted their
+  // half-written uploads on start); failed ones are listed again so they can be retried.
+  public async onApplicationBootstrap(): Promise<void> {
+    if (!this.storage.isConfigured()) {
+      return;
+    }
+
+    try {
+      for (const saved of await this.downloadRepository.findAll()) {
+        await this.restore(saved);
+      }
+    } catch (error) {
+      this.logger.error(`Could not resume downloads: ${(error as Error)?.message ?? 'unknown error'}`);
+    }
+  }
+
+  // Stops every running download when the app shuts down. Their saved rows stay, so the next start resumes them.
   public onModuleDestroy(): void {
     this.tasks.forEach((task) => task.abort.abort());
   }
@@ -119,25 +139,8 @@ export class DownloadService implements OnModuleDestroy {
       throw new BadRequestException('Media card is required');
     }
 
-    const task: IDownloadTask = {
-      job: {
-        identifier,
-        title: card.title,
-        state: 'queued',
-        receivedBytes: 0,
-        totalBytes: 0,
-        attempt: 0,
-        maxAttempts: MAX_ATTEMPTS,
-        error: null,
-        updatedAt: new Date(),
-      },
-      media: card,
-      originURL,
-      centre,
-      abort: new AbortController(),
-      videoURL: null,
-      lastEmitAt: 0,
-    };
+    await this.downloadRepository.savePending(identifier, card);
+    const task = this.createTask(identifier, card, originURL, centre);
 
     this.tasks.set(identifier, task);
     this.queue.push(task);
@@ -157,11 +160,13 @@ export class DownloadService implements OnModuleDestroy {
       if (task.job.state === 'queued') {
         this.dropQueued(task);
       }
+      await this.forgetSaved(identifier);
       return null;
     }
 
     if (task) {
       this.forgetTask(identifier);
+      await this.forgetSaved(identifier);
     }
 
     const size = await this.mediaRepository.findDownloadSize(identifier);
@@ -232,6 +237,7 @@ export class DownloadService implements OnModuleDestroy {
       this.reservedBytes -= reserved;
       reserved = 0;
       await this.withRetry(task, async () => this.mediaRepository.markDownloaded(job.identifier, task.media, totalBytes));
+      await this.forgetSaved(job.identifier);
 
       this.update(task, { state: 'completed', receivedBytes: totalBytes }, true);
       this.emitStorage();
@@ -250,6 +256,7 @@ export class DownloadService implements OnModuleDestroy {
       const message = (error as Error)?.message || 'Download failed';
       this.logger.error(`Download ${job.identifier} failed: ${message}`);
       this.update(task, { state: 'failed', error: message }, true);
+      await this.downloadRepository.markFailed(job.identifier, message).catch((saveError: Error) => this.logger.warn(`Could not save failed download ${job.identifier}: ${saveError.message}`));
     } finally {
       this.reservedBytes -= reserved;
     }
@@ -432,6 +439,59 @@ export class DownloadService implements OnModuleDestroy {
     if (task.abort.signal.aborted) {
       throw new DownloadCanceledError();
     }
+  }
+
+  // Brings back one saved download after a restart; a row whose video is already stored or no longer resolvable is deleted.
+  private async restore(saved: DownloadDocument): Promise<void> {
+    const { identifier, media, state, error } = saved;
+    const originURL = decryptShortTokenToURL(identifier);
+    const centre = originURL ? this.centreRegistry.findByURL(originURL) : undefined;
+
+    if (!originURL || !centre || (await this.mediaRepository.findDownloadSize(identifier)) !== null) {
+      await this.downloadRepository.remove(identifier);
+      return;
+    }
+
+    const task = this.createTask(identifier, media, originURL, centre);
+    this.tasks.set(identifier, task);
+
+    if (state === 'failed') {
+      this.update(task, { state: 'failed', error: error ?? 'Download failed' }, true);
+      return;
+    }
+
+    this.queue.push(task);
+    this.emitJob(task, true);
+    this.logger.log(`Resuming download ${identifier}`);
+    this.pump();
+  }
+
+  private createTask(identifier: string, media: IMediaSnapshot, originURL: string, centre: BaseCentre): IDownloadTask {
+    return {
+      job: {
+        identifier,
+        title: media.title,
+        state: 'queued',
+        receivedBytes: 0,
+        totalBytes: 0,
+        attempt: 0,
+        maxAttempts: MAX_ATTEMPTS,
+        error: null,
+        updatedAt: new Date(),
+      },
+      media,
+      originURL,
+      centre,
+      abort: new AbortController(),
+      videoURL: null,
+      lastEmitAt: 0,
+    };
+  }
+
+  // Deletes the saved row of a download that completed or was canceled by the user. A failure here only means the next start
+  // finds the row and drops it (the video is already stored) or resumes it once more.
+  private async forgetSaved(identifier: string): Promise<void> {
+    await this.downloadRepository.remove(identifier).catch((error: Error) => this.logger.warn(`Could not forget download ${identifier}: ${error.message}`));
   }
 
   private dropQueued(task: IDownloadTask): void {

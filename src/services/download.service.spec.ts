@@ -4,6 +4,8 @@ import { firstValueFrom, filter } from 'rxjs';
 import { Readable } from 'stream';
 import type { BaseCentre } from '../core/centres/base.centre';
 import { CentreRegistry } from '../core/centres/centre.registry';
+import type { DownloadRepository } from '../repositories/download.repository';
+import type { DownloadDocument } from '../repositories/download.schema';
 import type { MediaRepository } from '../repositories/media.repository';
 import type { IDownloadEvent } from '../shared/interfaces/download-event.interface';
 import type { IDownloadJob } from '../shared/interfaces/download.interface';
@@ -34,6 +36,7 @@ describe('DownloadService', () => {
   let centre: { getURL: jest.Mock; forget: jest.Mock; isAllowedAssetURL: jest.Mock };
   let repository: { findDownloadSize: jest.Mock; markDownloaded: jest.Mock; clearDownloaded: jest.Mock };
   let storage: Record<string, jest.Mock>;
+  let downloads: { findAll: jest.Mock; savePending: jest.Mock; markFailed: jest.Mock; remove: jest.Mock };
   let get: jest.SpyInstance;
   let service: DownloadService;
 
@@ -75,12 +78,19 @@ describe('DownloadService', () => {
       delete: jest.fn().mockResolvedValue(undefined),
       signedURL: jest.fn().mockResolvedValue('https://s3.test/signed'),
     };
+    downloads = {
+      findAll: jest.fn().mockResolvedValue([]),
+      savePending: jest.fn().mockResolvedValue(undefined),
+      markFailed: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
     get = jest.spyOn(axios, 'get');
     jest.spyOn(DownloadService.prototype as never, 'sleep').mockResolvedValue(undefined as never);
     service = new DownloadService(
       new CentreRegistry([centre as unknown as BaseCentre]),
       repository as unknown as MediaRepository,
       storage as unknown as StorageService,
+      downloads as unknown as DownloadRepository,
     );
   });
 
@@ -101,6 +111,8 @@ describe('DownloadService', () => {
     expect((storage.uploadPart.mock.calls[1][3] as Buffer).length).toBe(1024);
     expect(storage.completeUpload).toHaveBeenCalledWith('media/key.mp4', 'upload-1', [{ ETag: 'e1', PartNumber: 1 }, { ETag: 'e2', PartNumber: 2 }], TOTAL);
     expect(repository.markDownloaded).toHaveBeenCalledWith(ID, MEDIA, TOTAL);
+    expect(downloads.savePending).toHaveBeenCalledWith(ID, MEDIA);
+    expect(downloads.remove).toHaveBeenCalledWith(ID);
   });
 
   it('retries a dropped part and reports the attempt number', async () => {
@@ -144,6 +156,8 @@ describe('DownloadService', () => {
     expect(storage.abortUpload).toHaveBeenCalledWith('media/key.mp4', 'upload-1');
     expect(service.snapshot().jobs).toHaveLength(1);
     expect(repository.markDownloaded).not.toHaveBeenCalled();
+    expect(downloads.markFailed).toHaveBeenCalledWith(ID, 'Source answered 503');
+    expect(downloads.remove).not.toHaveBeenCalled();
   });
 
   it('fails at once when the source cannot serve byte ranges', async () => {
@@ -179,6 +193,7 @@ describe('DownloadService', () => {
 
     await expect(done).resolves.toMatchObject({ state: 'canceled' });
     expect(service.snapshot().jobs).toHaveLength(0);
+    expect(downloads.remove).toHaveBeenCalledWith(ID);
   });
 
   it('retries a failed download with the card it saved', async () => {
@@ -262,6 +277,73 @@ describe('DownloadService', () => {
     await expect(service.remove(ID)).resolves.toEqual({ identifier: ID, isDownloaded: false });
     expect(storage.delete).toHaveBeenCalledWith('media/key.mp4', TOTAL);
     expect(repository.clearDownloaded).toHaveBeenCalledWith(ID);
+  });
+
+  it('keeps the saved row when the app shuts down, so the next start resumes the download', async () => {
+    get.mockImplementation(
+      (_url: string, config: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          const cancel = (): void => reject(new AxiosError('canceled', 'ERR_CANCELED'));
+          if (config.signal?.aborted) {
+            cancel();
+          }
+          config.signal?.addEventListener('abort', cancel, { once: true });
+        }),
+    );
+    const done = settled();
+
+    await service.start(ID, MEDIA);
+    service.onModuleDestroy();
+
+    await expect(done).resolves.toMatchObject({ state: 'canceled' });
+    expect(downloads.savePending).toHaveBeenCalledWith(ID, MEDIA);
+    expect(downloads.remove).not.toHaveBeenCalled();
+    expect(downloads.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('resumes pending downloads on start, lists failed ones again, and drops rows that are done or invalid', async () => {
+    serveSource();
+    const pending = encryptURLToShortToken('https://site.test/videos/pending/');
+    const failed = encryptURLToShortToken('https://site.test/videos/failed/');
+    const stored = encryptURLToShortToken('https://site.test/videos/stored/');
+    const foreign = encryptURLToShortToken('https://other.test/videos/1/');
+    const saved = (identifier: string, state: 'pending' | 'failed', error: string | null = null): DownloadDocument => ({ identifier, media: MEDIA, state, error });
+    downloads.findAll.mockResolvedValue([saved(pending, 'pending'), saved(failed, 'failed', 'Source answered 503'), saved(stored, 'pending'), saved(foreign, 'pending')]);
+    repository.findDownloadSize.mockImplementation(async (identifier: string) => (identifier === stored ? TOTAL : null));
+    const completed = firstValueFrom(service.events$.pipe(filter((event: IDownloadEvent): boolean => event.type === 'job' && event.job.identifier === pending && event.job.state === 'completed')));
+
+    await service.onApplicationBootstrap();
+
+    await expect(completed).resolves.toMatchObject({ job: { receivedBytes: TOTAL } });
+    expect(repository.markDownloaded).toHaveBeenCalledWith(pending, MEDIA, TOTAL);
+    expect(service.snapshot().jobs.find((job) => job.identifier === failed)).toMatchObject({ state: 'failed', error: 'Source answered 503', title: 'Card' });
+    expect(downloads.remove).toHaveBeenCalledWith(stored);
+    expect(downloads.remove).toHaveBeenCalledWith(foreign);
+    expect(downloads.remove).toHaveBeenCalledWith(pending);
+    expect(downloads.remove).not.toHaveBeenCalledWith(failed);
+    expect(service.snapshot().jobs.map((job) => job.identifier)).not.toContain(stored);
+  });
+
+  it('does not resume anything while storage is not configured, and survives a database error', async () => {
+    storage.isConfigured.mockReturnValue(false);
+    await service.onApplicationBootstrap();
+    expect(downloads.findAll).not.toHaveBeenCalled();
+
+    storage.isConfigured.mockReturnValue(true);
+    downloads.findAll.mockRejectedValue(new Error('database down'));
+    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    expect(service.snapshot().jobs).toHaveLength(0);
+  });
+
+  it('forgets the saved row when the user dismisses a failed download', async () => {
+    get.mockResolvedValue(ranged(200, Buffer.alloc(1)));
+    const failed = settled();
+    await service.start(ID, MEDIA);
+    await failed;
+
+    await expect(service.remove(ID)).resolves.toBeNull();
+    expect(downloads.remove).toHaveBeenCalledWith(ID);
+    expect(service.snapshot().jobs).toHaveLength(0);
   });
 
   it('gives a signed link only for downloaded media', async () => {

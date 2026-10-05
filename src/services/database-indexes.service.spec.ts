@@ -2,12 +2,14 @@ import { Logger } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import { AlbumDocument } from '../repositories/album.schema';
+import { DownloadDocument } from '../repositories/download.schema';
 import { MediaDocument } from '../repositories/media.schema';
 import { DatabaseIndexesService } from './database-indexes.service';
 
 describe('DatabaseIndexesService', () => {
   const mediaModel = { collection: { collectionName: 'medias' }, syncIndexes: jest.fn() };
   const albumModel = { collection: { collectionName: 'albums' }, syncIndexes: jest.fn() };
+  const downloadModel = { collection: { collectionName: 'downloads' }, syncIndexes: jest.fn().mockResolvedValue([]) };
   let service: DatabaseIndexesService;
 
   beforeEach(async () => {
@@ -16,13 +18,13 @@ describe('DatabaseIndexesService', () => {
     albumModel.syncIndexes.mockReset();
 
     const module = await Test.createTestingModule({
-      providers: [DatabaseIndexesService, { provide: getModelToken(MediaDocument.name), useValue: mediaModel }, { provide: getModelToken(AlbumDocument.name), useValue: albumModel }],
+      providers: [DatabaseIndexesService, { provide: getModelToken(MediaDocument.name), useValue: mediaModel }, { provide: getModelToken(AlbumDocument.name), useValue: albumModel }, { provide: getModelToken(DownloadDocument.name), useValue: downloadModel }],
     }).compile();
 
     service = module.get(DatabaseIndexesService);
   });
 
-  it('syncs the indexes of medias and albums on start and reports dropped ones', async () => {
+  it('syncs the indexes of medias, albums, and downloads on start and reports dropped ones', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     mediaModel.syncIndexes.mockResolvedValue(['identifierHash_1']);
     albumModel.syncIndexes.mockResolvedValue([]);
@@ -31,6 +33,7 @@ describe('DatabaseIndexesService', () => {
 
     expect(mediaModel.syncIndexes).toHaveBeenCalledTimes(1);
     expect(albumModel.syncIndexes).toHaveBeenCalledTimes(1);
+    expect(downloadModel.syncIndexes).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith('Dropped outdated indexes on medias: identifierHash_1');
     expect(warn).toHaveBeenCalledTimes(1);
   });
