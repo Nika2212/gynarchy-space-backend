@@ -21,6 +21,7 @@ import { AlbumDocument, AlbumSchema } from './repositories/album.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
 import { AlbumService } from './services/album.service';
+import { DatabaseIndexesService } from './services/database-indexes.service';
 import { DownloadService } from './services/download.service';
 import { ImageProxyService } from './services/image-proxy.service';
 import { MediaStreamService } from './services/media-stream.service';
@@ -96,6 +97,7 @@ export function mongoOptions(configService: ConfigService) {
     MediaRepository,
     AlbumService,
     AlbumRepository,
+    DatabaseIndexesService,
   ],
 })
 export class AppModule {}
