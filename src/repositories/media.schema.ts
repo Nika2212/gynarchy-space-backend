@@ -10,19 +10,20 @@ export class MediaDocument {
   @Prop({ required: true })
   url: string;
 
-  @Prop({ required: true })
+  // Card text may be empty (no description, no posted date), and Mongoose treats '' as missing on required strings, so these are not required.
+  @Prop({ default: '' })
   title: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   description: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   thumbnailSrc: string;
 
   @Prop({ default: '' })
   previewSrc: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   postedAt: string;
 
   @Prop({ required: true, default: 0 })

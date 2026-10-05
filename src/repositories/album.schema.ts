@@ -7,16 +7,17 @@ export class AlbumItem {
   @Prop({ required: true })
   identifier: string;
 
-  @Prop({ required: true })
+  // Card text may be empty, and Mongoose treats '' as missing on required strings, so these are not required.
+  @Prop({ default: '' })
   title: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   thumbnailSrc: string;
 
   @Prop({ default: '' })
   previewSrc: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   postedAt: string;
 
   @Prop({ required: true, default: 0 })
