@@ -256,7 +256,7 @@ Downloaded videos are copied to a Backblaze B2 bucket (S3 API). `GET /api/media/
 
 How a download runs:
 
-- One at a time. The source size is probed with `Range: bytes=0-0`, then the video is copied in 16 MB byte ranges, each uploaded as one multipart part.
+- Up to 3 at a time; the rest wait in the queue. Each running download reserves its size, so parallel downloads never overfill the space budget. The source size is probed with `Range: bytes=0-0`, then the video is copied in 16 MB byte ranges, each uploaded as one multipart part.
 - Every step (resolve link, probe, part download, part upload, finish) is retried up to 5 times with backoff 1 s, 2 s, 4 s, 8 s. A source that sends nothing for 30 s counts as dropped. A source answering 401/403/404/410 or a non-video type gets a freshly resolved link on the next try. Other 4xx, no byte-range support, or not enough free space fail at once.
 - A failed job stays listed with its error until retried or dismissed; its multipart upload is aborted. Jobs live in memory: a restart drops them, and leftover multipart uploads are aborted on the next start.
 - Free space is `STORAGE_LIMIT_GB` minus what is stored under `media/` (measured on start, then tracked).

@@ -195,6 +195,55 @@ describe('DownloadService', () => {
     expect(repository.markDownloaded).toHaveBeenCalledWith(ID, MEDIA, TOTAL);
   });
 
+  it('runs at most three downloads at once and starts the next when a slot frees', async () => {
+    const pending: Array<() => void> = [];
+    get.mockImplementation(() => new Promise((_resolve, reject) => pending.push(() => reject(new AxiosError('canceled', 'ERR_CANCELED')))));
+    const ids = [1, 2, 3, 4].map((n) => encryptURLToShortToken(`https://site.test/videos/${n}/`));
+
+    for (const id of ids) {
+      await service.start(id, MEDIA);
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const states = (): string[] => service.snapshot().jobs.map((job) => job.state);
+    expect(states()).toEqual(['downloading', 'downloading', 'downloading', 'queued']);
+
+    const canceled = settled();
+    await service.remove(ids[0]);
+    pending.shift()!();
+    await canceled;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(states()).toEqual(['downloading', 'downloading', 'downloading']);
+    for (const id of ids.slice(1)) {
+      await service.remove(id);
+    }
+    pending.forEach((reject) => reject());
+  });
+
+  it('reserves space for running downloads so parallel ones cannot overfill storage', async () => {
+    serveSource();
+    storage.usage.mockReturnValue({ isConfigured: true, usedBytes: 0, limitBytes: TOTAL + 10, freeBytes: TOTAL + 10 });
+    const original = get.getMockImplementation()!;
+    let hold: () => void = () => undefined;
+    get.mockImplementation(async (url: string, config: { headers?: Record<string, string> }) => {
+      const [start, end] = rangeOf(config);
+      if (start === 0 && end > 0) {
+        await new Promise<void>((resolve) => (hold = resolve));
+      }
+      return original(url, config);
+    });
+    const second = encryptURLToShortToken('https://site.test/videos/2/');
+    const failed = firstValueFrom(service.events$.pipe(filter((event: IDownloadEvent): boolean => event.type === 'job' && event.job.identifier === second && event.job.state === 'failed')));
+
+    await service.start(ID, MEDIA);
+    await new Promise((resolve) => setImmediate(resolve));
+    await service.start(second, MEDIA);
+
+    await expect(failed).resolves.toMatchObject({ job: { error: expect.stringContaining('Not enough storage') } });
+    hold();
+  });
+
   it('validates the request before queueing', async () => {
     await expect(service.start('nope', MEDIA)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.start(encryptURLToShortToken('https://other.test/v'), MEDIA)).rejects.toBeInstanceOf(NotFoundException);

@@ -23,8 +23,10 @@ import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import { StorageService } from './storage.service';
 
-// B2 needs parts of at least 5 MB; 16 MB keeps a 1 GB video near 64 parts and one part in memory at a time.
+// B2 needs parts of at least 5 MB; 16 MB keeps a 1 GB video near 64 parts and one part per download in memory.
 const PART_SIZE = 16 * 1024 * 1024;
+// Up to three videos copy at once (about 48 MB of parts in memory); the rest wait in the queue.
+const MAX_CONCURRENT = 3;
 const MAX_ATTEMPTS = 5;
 const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
@@ -68,7 +70,8 @@ export class DownloadService implements OnModuleDestroy {
   private readonly tasks = new Map<string, IDownloadTask>();
   private readonly queue: IDownloadTask[] = [];
   private readonly eventsSubject = new Subject<IDownloadEvent>();
-  private running = false;
+  private running = 0;
+  private reservedBytes = 0;
 
   public readonly events$: Observable<IDownloadEvent> = this.eventsSubject.asObservable();
 
@@ -140,7 +143,7 @@ export class DownloadService implements OnModuleDestroy {
     this.queue.push(task);
     this.emitJob(task, true);
     const queued = { ...task.job };
-    void this.pump();
+    this.pump();
 
     return queued;
   }
@@ -180,21 +183,19 @@ export class DownloadService implements OnModuleDestroy {
     return this.storage.signedURL(this.storage.keyFor(identifier));
   }
 
-  // Runs queued downloads one at a time so a single phone connection and the server memory are never overloaded.
-  private async pump(): Promise<void> {
-    if (this.running) {
-      return;
-    }
-    this.running = true;
-
-    try {
-      for (let task = this.queue.shift(); task; task = this.queue.shift()) {
-        if (!task.abort.signal.aborted) {
-          await this.run(task);
-        }
+  // Starts queued downloads until MAX_CONCURRENT are running; each finished one frees a slot for the next.
+  private pump(): void {
+    while (this.running < MAX_CONCURRENT && this.queue.length > 0) {
+      const task = this.queue.shift()!;
+      if (task.abort.signal.aborted) {
+        continue;
       }
-    } finally {
-      this.running = false;
+
+      this.running += 1;
+      void this.run(task).finally(() => {
+        this.running -= 1;
+        this.pump();
+      });
     }
   }
 
@@ -202,15 +203,18 @@ export class DownloadService implements OnModuleDestroy {
     const { job } = task;
     const key = this.storage.keyFor(job.identifier);
     let uploadId: string | null = null;
+    let reserved = 0;
 
     try {
       this.update(task, { state: 'downloading', attempt: 1, error: null }, true);
 
       const totalBytes = await this.withRetry(task, async (refresh) => this.probeSize(task, refresh));
-      const free = this.storage.usage().freeBytes;
+      const free = this.storage.usage().freeBytes - this.reservedBytes;
       if (totalBytes > free) {
-        throw new DownloadError(`Not enough storage: needs ${this.toMB(totalBytes)} MB, ${this.toMB(free)} MB free`, false);
+        throw new DownloadError(`Not enough storage: needs ${this.toMB(totalBytes)} MB, ${this.toMB(Math.max(0, free))} MB free`, false);
       }
+      this.reservedBytes += totalBytes;
+      reserved = totalBytes;
       this.update(task, { totalBytes }, true);
 
       uploadId = await this.withRetry(task, async () => this.storage.createUpload(key));
@@ -225,6 +229,8 @@ export class DownloadService implements OnModuleDestroy {
 
       await this.withRetry(task, async () => this.storage.completeUpload(key, uploadId!, parts, totalBytes));
       uploadId = null;
+      this.reservedBytes -= reserved;
+      reserved = 0;
       await this.withRetry(task, async () => this.mediaRepository.markDownloaded(job.identifier, task.media, totalBytes));
 
       this.update(task, { state: 'completed', receivedBytes: totalBytes }, true);
@@ -244,6 +250,8 @@ export class DownloadService implements OnModuleDestroy {
       const message = (error as Error)?.message || 'Download failed';
       this.logger.error(`Download ${job.identifier} failed: ${message}`);
       this.update(task, { state: 'failed', error: message }, true);
+    } finally {
+      this.reservedBytes -= reserved;
     }
   }
 
