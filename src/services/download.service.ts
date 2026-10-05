@@ -22,6 +22,7 @@ import { MediaFlags, MediaRepository } from '../repositories/media.repository';
 import { isPublicHTTPHost } from '../shared/image-type';
 import { IDownloadEvent } from '../shared/interfaces/download-event.interface';
 import { IDownloadJob, IDownloadSnapshot } from '../shared/interfaces/download.interface';
+import { IMediaPlayback } from '../shared/interfaces/media-playback.interface';
 import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { decryptShortTokenToURL } from '../shared/url-token';
 import { StorageService } from './storage.service';
@@ -37,6 +38,8 @@ const RETRY_MAX_MS = 30_000;
 const STALL_TIMEOUT_MS = 30_000;
 const PROGRESS_EMIT_MS = 500;
 const COMPLETED_JOB_TTL_MS = 30_000;
+// After storage refuses a download, stored copies are skipped for this long before storage is asked again.
+const STORAGE_RECHECK_MS = 5 * 60_000;
 // Statuses that usually mean the signed source link expired, so the next attempt resolves a fresh one.
 const REFRESH_STATUSES = new Set([401, 403, 404, 410]);
 
@@ -75,6 +78,7 @@ export class DownloadService implements OnApplicationBootstrap, OnModuleDestroy 
   private readonly eventsSubject = new Subject<IDownloadEvent>();
   private running = 0;
   private reservedBytes = 0;
+  private storageRefusedUntil = 0;
 
   public readonly events$: Observable<IDownloadEvent> = this.eventsSubject.asObservable();
 
@@ -178,6 +182,28 @@ export class DownloadService implements OnApplicationBootstrap, OnModuleDestroy 
     const flags = await this.mediaRepository.clearDownloaded(identifier);
     this.emitStorage();
     return flags;
+  }
+
+  // Where the player should load a media: the signed B2 link when the copy is stored and B2 serves it. A stored copy B2 refuses
+  // (daily download cap) comes back without a link, and stored copies are then skipped for a while without asking B2 again.
+  public async playback(identifier: string): Promise<IMediaPlayback> {
+    const url = await this.playbackURL(identifier);
+    if (url === null) {
+      return { url: null, isDownloaded: false };
+    }
+
+    if (!this.isStorageReadable() || !(await this.storage.isReadable(url))) {
+      if (this.isStorageReadable()) {
+        this.storageRefusedUntil = Date.now() + STORAGE_RECHECK_MS;
+      }
+      return { url: null, isDownloaded: true };
+    }
+    return { url, isDownloaded: true };
+  }
+
+  // False for a while after storage refused a download, so streams of stored media go to the source instead.
+  public isStorageReadable(): boolean {
+    return Date.now() >= this.storageRefusedUntil;
   }
 
   // Signed B2 link for a downloaded media, or null when it is not stored.
@@ -295,7 +321,7 @@ export class DownloadService implements OnApplicationBootstrap, OnModuleDestroy 
   private async probeSize(task: IDownloadTask, refresh: boolean): Promise<number> {
     const url = await this.videoURL(task, refresh);
     const response = await axios.get(url, {
-      headers: { Range: 'bytes=0-0' },
+      headers: { ...task.centre.videoRequestHeaders(), Range: 'bytes=0-0' },
       responseType: 'stream',
       timeout: STALL_TIMEOUT_MS,
       signal: task.abort.signal,
@@ -332,7 +358,7 @@ export class DownloadService implements OnApplicationBootstrap, OnModuleDestroy 
 
     try {
       const response = await axios.get(url, {
-        headers: { Range: `bytes=${start}-${end}` },
+        headers: { ...task.centre.videoRequestHeaders(), Range: `bytes=${start}-${end}` },
         responseType: 'stream',
         timeout: STALL_TIMEOUT_MS,
         signal,

@@ -29,14 +29,17 @@ describe('MediaStreamService', () => {
   const xmdCentre = {
     getURL: jest.fn().mockResolvedValue('https://cdn.example.com/v.mp4'),
     isAllowedAssetURL: jest.fn().mockReturnValue(true),
+    videoRequestHeaders: jest.fn().mockReturnValue({ Referer: 'https://xmegadrive.com/' }),
   };
-  const downloads = { playbackURL: jest.fn().mockResolvedValue(null) };
+  const downloads = { playbackURL: jest.fn().mockResolvedValue(null), isStorageReadable: jest.fn().mockReturnValue(true) };
   const service = new MediaStreamService(new CentreRegistry([xmdCentre as unknown as BaseCentre]), downloads as unknown as DownloadService);
   const originURL = 'https://xmegadrive.com/videos/1';
   const id = encryptURLToShortToken(originURL);
 
   beforeEach(() => {
     mockedAxios.mockReset();
+    downloads.playbackURL.mockReset().mockResolvedValue(null);
+    downloads.isStorageReadable.mockReturnValue(true);
     xmdCentre.getURL.mockResolvedValue('https://cdn.example.com/v.mp4');
     xmdCentre.isAllowedAssetURL.mockReturnValue(true);
   });
@@ -59,6 +62,29 @@ describe('MediaStreamService', () => {
     expect(res.redirect).toHaveBeenCalledWith(302, 'https://s3.example.com/media/x.mp4?sig=1');
     expect(xmdCentre.getURL).not.toHaveBeenCalled();
     expect(mockedAxios).not.toHaveBeenCalled();
+  });
+
+  it('streams a downloaded video from the source when asked for the source or while storage refuses downloads', async () => {
+    downloads.playbackURL.mockResolvedValue('https://s3.example.com/media/x.mp4?sig=1');
+    xmdCentre.getURL.mockClear();
+    mockedAxios.mockResolvedValue({
+      status: 206,
+      headers: { 'content-type': 'video/mp4', 'content-range': 'bytes 0-1/2', 'content-length': '2' },
+      data: Object.assign(new PassThrough(), { destroy: jest.fn() }),
+    });
+
+    const fromSource = Object.assign(mockResponse(), { redirect: jest.fn() });
+    await service.stream(id, 'bytes=0-1', fromSource as never, true);
+    expect(fromSource.redirect).not.toHaveBeenCalled();
+    expect(downloads.playbackURL).not.toHaveBeenCalled();
+
+    downloads.isStorageReadable.mockReturnValue(false);
+    const refused = Object.assign(mockResponse(), { redirect: jest.fn() });
+    await service.stream(id, 'bytes=0-1', refused as never);
+    expect(refused.redirect).not.toHaveBeenCalled();
+    expect(downloads.playbackURL).not.toHaveBeenCalled();
+    expect(xmdCentre.getURL).toHaveBeenCalledTimes(2);
+    expect(mockedAxios).toHaveBeenCalledTimes(2);
   });
 
   it('rejects a resolved video URL on a private host', async () => {
@@ -92,7 +118,7 @@ describe('MediaStreamService', () => {
 
     const res = mockResponse();
     await service.stream(id, 'bytes=0-1', res as never);
-    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ headers: { Range: 'bytes=0-1' } }));
+    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ headers: { Referer: 'https://xmegadrive.com/', Range: 'bytes=0-1' } }));
     expect(res.status).toHaveBeenCalledWith(206);
     expect(res.set).toHaveBeenCalledWith(expect.objectContaining({ 'Content-Type': 'video/mp4' }));
     remote.emit('end');
@@ -109,7 +135,7 @@ describe('MediaStreamService', () => {
     });
 
     await expect(service.stream(id, '', mockResponse() as never)).rejects.toBeInstanceOf(BadRequestException);
-    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ headers: {} }));
+    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ headers: { Referer: 'https://xmegadrive.com/' } }));
     expect(remote.destroy).toHaveBeenCalled();
   });
 
@@ -153,6 +179,7 @@ describe('MediaStreamService.preview', () => {
   const centre = {
     getURL: jest.fn(),
     isAllowedAssetURL: jest.fn((url: string) => new URL(url).hostname === 'heavyfetish.com'),
+    videoRequestHeaders: jest.fn().mockReturnValue({ Referer: 'https://heavyfetish.com/' }),
   };
   const service = new MediaStreamService(new CentreRegistry([centre as unknown as BaseCentre]), { playbackURL: jest.fn() } as unknown as DownloadService);
 
@@ -177,7 +204,7 @@ describe('MediaStreamService.preview', () => {
     await service.preview(encryptURLToShortToken(previewURL), 'bytes=0-', res as never);
 
     expect(centre.getURL).not.toHaveBeenCalled();
-    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ url: previewURL, headers: { Range: 'bytes=0-' } }));
+    expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ url: previewURL, headers: { Referer: 'https://heavyfetish.com/', Range: 'bytes=0-' } }));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });

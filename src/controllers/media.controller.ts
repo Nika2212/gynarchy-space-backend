@@ -67,14 +67,15 @@ export class MediaController {
     const { id } = req.params;
     const range = req.headers.range as string;
 
-    return this.mediaStreamService.stream(id as string, range, res);
+    // ?source=origin streams from the original site even when a stored copy exists (storage unavailable).
+    return this.mediaStreamService.stream(id as string, range, res, req.query.source === 'origin');
   }
 
   @Get(':id/playback')
   // Signed storage link of a downloaded media, so the player streams straight from storage instead of being redirected
-  // through this API on every Range request; null when the media is not downloaded.
+  // through this API on every Range request. No link when the media is not downloaded or storage refuses it right now.
   public async findPlayback(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const payload: IMediaPlayback = { url: await this.downloadService.playbackURL(req.params.id as string) };
+    const payload: IMediaPlayback = await this.downloadService.playback(req.params.id as string);
     res.status(200).json(payload);
   }
 

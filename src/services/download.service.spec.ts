@@ -33,7 +33,7 @@ function rangeOf(config: { headers?: Record<string, string> }): [number, number]
 }
 
 describe('DownloadService', () => {
-  let centre: { getURL: jest.Mock; forget: jest.Mock; isAllowedAssetURL: jest.Mock };
+  let centre: { getURL: jest.Mock; forget: jest.Mock; isAllowedAssetURL: jest.Mock; videoRequestHeaders: jest.Mock };
   let repository: { findDownloadSize: jest.Mock; markDownloaded: jest.Mock; clearDownloaded: jest.Mock };
   let storage: Record<string, jest.Mock>;
   let downloads: { findAll: jest.Mock; savePending: jest.Mock; markFailed: jest.Mock; remove: jest.Mock };
@@ -61,6 +61,7 @@ describe('DownloadService', () => {
       getURL: jest.fn().mockResolvedValue('https://cdn.site.test/v.mp4'),
       forget: jest.fn(),
       isAllowedAssetURL: jest.fn((url: string) => url.startsWith('https://site.test')),
+      videoRequestHeaders: jest.fn().mockReturnValue({ Referer: 'https://site.test/' }),
     };
     repository = {
       findDownloadSize: jest.fn().mockResolvedValue(null),
@@ -77,6 +78,7 @@ describe('DownloadService', () => {
       abortUpload: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
       signedURL: jest.fn().mockResolvedValue('https://s3.test/signed'),
+      isReadable: jest.fn().mockResolvedValue(true),
     };
     downloads = {
       findAll: jest.fn().mockResolvedValue([]),
@@ -111,6 +113,7 @@ describe('DownloadService', () => {
     expect((storage.uploadPart.mock.calls[1][3] as Buffer).length).toBe(1024);
     expect(storage.completeUpload).toHaveBeenCalledWith('media/key.mp4', 'upload-1', [{ ETag: 'e1', PartNumber: 1 }, { ETag: 'e2', PartNumber: 2 }], TOTAL);
     expect(repository.markDownloaded).toHaveBeenCalledWith(ID, MEDIA, TOTAL);
+    expect(get.mock.calls.every(([, config]) => (config as { headers: Record<string, string> }).headers.Referer === 'https://site.test/')).toBe(true);
     expect(downloads.savePending).toHaveBeenCalledWith(ID, MEDIA);
     expect(downloads.remove).toHaveBeenCalledWith(ID);
   });
@@ -344,6 +347,36 @@ describe('DownloadService', () => {
     await expect(service.remove(ID)).resolves.toBeNull();
     expect(downloads.remove).toHaveBeenCalledWith(ID);
     expect(service.snapshot().jobs).toHaveLength(0);
+  });
+
+  it('tells the player where to load a media: storage when it serves the copy, the source otherwise', async () => {
+    await expect(service.playback(ID)).resolves.toEqual({ url: null, isDownloaded: false });
+    expect(storage.isReadable).not.toHaveBeenCalled();
+
+    repository.findDownloadSize.mockResolvedValue(TOTAL);
+    await expect(service.playback(ID)).resolves.toEqual({ url: 'https://s3.test/signed', isDownloaded: true });
+    expect(storage.isReadable).toHaveBeenCalledWith('https://s3.test/signed');
+    expect(service.isStorageReadable()).toBe(true);
+  });
+
+  it('skips storage for a while once it refuses a download, then asks again', async () => {
+    repository.findDownloadSize.mockResolvedValue(TOTAL);
+    storage.isReadable.mockResolvedValue(false);
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+
+    await expect(service.playback(ID)).resolves.toEqual({ url: null, isDownloaded: true });
+    expect(service.isStorageReadable()).toBe(false);
+
+    storage.isReadable.mockClear();
+    now.mockReturnValue(1_000_000 + 4 * 60_000);
+    await expect(service.playback(ID)).resolves.toEqual({ url: null, isDownloaded: true });
+    expect(storage.isReadable).not.toHaveBeenCalled();
+
+    storage.isReadable.mockResolvedValue(true);
+    now.mockReturnValue(1_000_000 + 5 * 60_000);
+    expect(service.isStorageReadable()).toBe(true);
+    await expect(service.playback(ID)).resolves.toEqual({ url: 'https://s3.test/signed', isDownloaded: true });
+    expect(storage.isReadable).toHaveBeenCalledTimes(1);
   });
 
   it('gives a signed link only for downloaded media', async () => {

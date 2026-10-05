@@ -1,4 +1,4 @@
-import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import type { Response } from 'express';
 import { CentreRegistry } from '../core/centres/centre.registry';
@@ -8,13 +8,16 @@ import { DownloadService } from './download.service';
 
 @Injectable()
 export class MediaStreamService {
+  private readonly logger = new Logger(MediaStreamService.name);
+
   constructor(
     private readonly centreRegistry: CentreRegistry,
     private readonly downloadService: DownloadService,
   ) {}
 
-  // Resolves the video URL and pipes the remote stream, including Range support.
-  public async stream(id: string, range: string, response: Response): Promise<void> {
+  // Resolves the video URL and pipes the remote stream, including Range support. A stored copy is served from storage unless
+  // the player asked for the source (fromSource) or storage is refusing downloads right now.
+  public async stream(id: string, range: string, response: Response, fromSource = false): Promise<void> {
     if (!id) {
       throw new NotFoundException('Invalid media id');
     }
@@ -29,14 +32,14 @@ export class MediaStreamService {
       throw new NotFoundException('Invalid media id');
     }
 
-    const storedURL = await this.downloadService.playbackURL(id);
+    const storedURL = fromSource || !this.downloadService.isStorageReadable() ? null : await this.downloadService.playbackURL(id);
     if (storedURL) {
       response.redirect(HttpStatus.FOUND, storedURL);
       return;
     }
 
     const decryptedURL = await centre.getURL(originURL);
-    return this.pipe(decryptedURL, range, response);
+    return this.pipe(decryptedURL, range, response, centre.videoRequestHeaders(), originURL);
   }
 
   // Pipes a card's short preview video; the id is the preview URL itself, so no page lookup is needed.
@@ -50,11 +53,12 @@ export class MediaStreamService {
       throw new NotFoundException('Invalid preview id');
     }
 
-    return this.pipe(previewURL, range, response);
+    return this.pipe(previewURL, range, response, this.centreRegistry.findByURL(previewURL)?.videoRequestHeaders() ?? {}, previewURL);
   }
 
-  // Fetches a remote video and pipes it to the client, forwarding Range so seeking works.
-  private async pipe(decryptedURL: string, range: string, response: Response): Promise<void> {
+  // Fetches a remote video and pipes it to the client, forwarding Range so seeking works. A refused or non-video answer is logged
+  // with the page it belongs to, so a video that will not play can be traced to its source.
+  private async pipe(decryptedURL: string, range: string, response: Response, sourceHeaders: Record<string, string>, pageURL: string): Promise<void> {
     const abort = new AbortController();
     // Stops the remote fetch when the client closes the response.
     const onClose = (): void => abort.abort();
@@ -71,13 +75,14 @@ export class MediaStreamService {
         responseType: 'stream',
         timeout: 15_000,
         signal: abort.signal,
-        headers: range ? { Range: range } : {},
+        headers: { ...sourceHeaders, ...(range ? { Range: range } : {}) },
         validateStatus: (status) => status === HttpStatus.OK || status === HttpStatus.PARTIAL_CONTENT,
       });
 
       const contentType = String(remoteResponse.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
       if (!contentType.startsWith('video/') && contentType !== 'application/octet-stream') {
         remoteResponse.data.destroy();
+        this.logger.warn(`Source sent ${contentType || 'no content type'} instead of a video for ${pageURL} (${this.describe(decryptedURL)})`);
         throw new BadRequestException('Invalid media type');
       }
 
@@ -99,9 +104,24 @@ export class MediaStreamService {
       if (error instanceof BadRequestException || error instanceof NotFoundException) {
         throw error;
       }
+      if (!abort.signal.aborted) {
+        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+        const type = axios.isAxiosError(error) ? String(error.response?.headers?.['content-type'] ?? '-').split(';')[0] : '-';
+        this.logger.warn(`Source refused ${pageURL} (${this.describe(decryptedURL)}): ${status ? `${status} ${type}` : (error as Error)?.message ?? 'unknown error'}`);
+      }
       if (!response.headersSent) {
         response.status(HttpStatus.BAD_GATEWAY).send('Error fetching remote stream');
       }
+    }
+  }
+
+  // Host and path of a source file link, without the signed query string.
+  private describe(url: string): string {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.host}${parsed.pathname}`;
+    } catch {
+      return 'invalid URL';
     }
   }
 }

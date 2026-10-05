@@ -100,6 +100,12 @@ export abstract class BaseCentre implements OnModuleDestroy {
     this.initAbort.abort();
   }
 
+  // Headers for requests to this site's video files. Some file servers (e.g. HF's older ones) have hotlink protection and answer
+  // 404 to a valid link unless the request names the site as Referer, while the site's own player always sends it.
+  public videoRequestHeaders(): Record<string, string> {
+    return { Referer: `${new URL(this.base).origin}/` };
+  }
+
   // True when the URL is http(s) and lives on the same site as the centre base.
   public isAllowedAssetURL(url: string): boolean {
     try {

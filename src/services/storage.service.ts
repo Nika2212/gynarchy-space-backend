@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { hashIdentifier } from '../shared/identifier-hash';
 import { IStorageUsage } from '../shared/interfaces/download.interface';
@@ -21,6 +22,7 @@ const DEFAULT_LIMIT_GB = 512;
 const BYTES_PER_GB = 1024 ** 3;
 // Long enough to watch a full video and seek around without the link expiring mid-play.
 const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60;
+const READ_CHECK_TIMEOUT_MS = 5_000;
 
 interface IStorageConfig {
   endpoint: string;
@@ -117,6 +119,27 @@ export class StorageService implements OnModuleInit {
   public async delete(key: string, sizeBytes: number): Promise<void> {
     await this.s3().send(new DeleteObjectCommand({ Bucket: this.bucket(), Key: key }));
     this.usedBytes = Math.max(0, this.usedBytes - sizeBytes);
+  }
+
+  // Reads the first byte of a signed link to learn whether B2 serves it right now. B2 refuses downloads once the daily download
+  // cap is reached (403 download_cap_exceeded); a refused or unreachable link means the player should stream from the source.
+  public async isReadable(signedURL: string): Promise<boolean> {
+    try {
+      const response = await axios.get<string>(signedURL, {
+        headers: { Range: 'bytes=0-0' },
+        responseType: 'text',
+        timeout: READ_CHECK_TIMEOUT_MS,
+        validateStatus: () => true,
+      });
+      if (response.status === 200 || response.status === 206) {
+        return true;
+      }
+      this.logger.warn(`Storage refused a download (${response.status}): ${String(response.data).slice(0, 200)}`);
+      return false;
+    } catch (error) {
+      this.logger.warn(`Storage could not be reached: ${(error as Error)?.message ?? 'unknown error'}`);
+      return false;
+    }
   }
 
   // Short-lived link the player fetches straight from B2, so playback never streams through this server.
