@@ -25,6 +25,12 @@ Fill `.env`:
 | `MONGODB_URI` | yes | MongoDB Atlas SRV URL (`mongodb+srv://...`) |
 | `MONGODB_USERNAME` | no | Atlas user |
 | `MONGODB_PASSWORD` | no | Atlas password |
+| `B2_ENDPOINT` | no | Backblaze B2 S3 endpoint, e.g. `https://s3.eu-central-003.backblazeb2.com`. Downloads stay off until all `B2_*` are set |
+| `B2_REGION` | no | B2 region, e.g. `eu-central-003` |
+| `B2_BUCKET` | no | Private bucket name |
+| `B2_KEY_ID` | no | Application key ID (limited to the bucket) |
+| `B2_APPLICATION_KEY` | no | Application key |
+| `STORAGE_LIMIT_GB` | no | Space budget for downloads, default `512` |
 
 Search fans out to every centre (XMD, HF, FVC) in parallel and interleaves the cards; a page is the last one once every centre returns a short page, and a centre that fails or takes longer than 5 seconds only drops its own cards (that page is then never reported as the last one). Searches never touch the database. MongoDB Atlas stores only media the user cares about: liked, favorited, downloaded, or with watch progress. A row is created on the first of those and deleted once none is left. Titles, descriptions, URLs, and thumbnail tokens are encrypted with `JWT_SECRET` before write. The lookup key is an HMAC, not the raw identifier.
 
@@ -126,7 +132,7 @@ Use as `<img src="{API_BASE}/images/{token}">`. Public on purpose.
 
 `GET /api/media/<identifier>`
 
-Supports `Range`. Response is `video/*` (or `video/mp4` when the origin sends `application/octet-stream`).
+Supports `Range`. Response is `video/*` (or `video/mp4` when the origin sends `application/octet-stream`). A downloaded video answers **302** to its signed B2 link instead (see Downloads).
 
 Use as `<video src="{API_BASE}/media/{identifier}">`. Public on purpose, like thumbnails, so the native player can stream and seek. Only ids that point at a registered centre site are served; the centre that owns the host resolves the video.
 
@@ -238,9 +244,38 @@ The library then returns the saved `watchPositionAt` and `watchedAt` for that it
 | 404 | Bad id |
 | 429 | More than 120 / minute |
 
-### Not implemented
+### Downloads (JWT)
 
-- `GET /api/media/:id/download` — placeholder only (no file storage)
+Downloaded videos are copied to a Backblaze B2 bucket (S3 API). `GET /api/media/<identifier>` then answers **302** with a 6-hour signed B2 link, so playback never streams through this server. Downloads are disabled (503) until every `B2_*` variable is set.
+
+`POST /api/media/<identifier>/download` → **202** with the job. Body `{ "media": { ...card } }`; the card may be left out only to retry a failed download.
+
+`DELETE /api/media/<identifier>/download` cancels an active download, dismisses a failed one, or deletes the stored copy (**200** with the media flags when a library row is left, otherwise **204**).
+
+`GET /api/media/downloads` → `{ jobs: IDownloadJob[], storage: { isConfigured, usedBytes, limitBytes, freeBytes } }`
+
+How a download runs:
+
+- One at a time. The source size is probed with `Range: bytes=0-0`, then the video is copied in 16 MB byte ranges, each uploaded as one multipart part.
+- Every step (resolve link, probe, part download, part upload, finish) is retried up to 5 times with backoff 1 s, 2 s, 4 s, 8 s. A source that sends nothing for 30 s counts as dropped. A source answering 401/403/404/410 or a non-video type gets a freshly resolved link on the next try. Other 4xx, no byte-range support, or not enough free space fail at once.
+- A failed job stays listed with its error until retried or dismissed; its multipart upload is aborted. Jobs live in memory: a restart drops them, and leftover multipart uploads are aborted on the next start.
+- Free space is `STORAGE_LIMIT_GB` minus what is stored under `media/` (measured on start, then tracked).
+
+| Status | When |
+|---|---|
+| 400 | No card and no failed job to retry |
+| 404 | Bad id, or id outside every centre site |
+| 409 | Already downloaded |
+| 503 | Storage is not configured |
+
+**Socket** (Socket.IO, namespace `/downloads`, same origin as the API). Connect with `auth: { token: <jwt> }`; a missing or invalid token gets `downloads:unauthorized` and is disconnected.
+
+| Event | Payload |
+|---|---|
+| `downloads:snapshot` | On connect: `{ jobs, storage }` |
+| `downloads:job` | A job changed: `{ identifier, title, state, receivedBytes, totalBytes, attempt, maxAttempts, error, updatedAt }`. `state` is `queued`, `downloading`, `completed`, `failed`, or `canceled`. Byte progress is sent at most every 500 ms |
+| `downloads:removed` | `identifier` of a job that left the list (canceled, dismissed, or 30 s after completing) |
+| `downloads:storage` | `{ isConfigured, usedBytes, limitBytes, freeBytes }` after a download completes or a copy is deleted |
 
 ## Scripts
 

@@ -4,6 +4,7 @@ import { PassThrough } from 'stream';
 import type { BaseCentre } from '../core/centres/base.centre';
 import { CentreRegistry } from '../core/centres/centre.registry';
 import { encryptURLToShortToken } from '../shared/url-token';
+import { DownloadService } from './download.service';
 import { MediaStreamService } from './media-stream.service';
 
 jest.mock('axios');
@@ -29,7 +30,8 @@ describe('MediaStreamService', () => {
     getURL: jest.fn().mockResolvedValue('https://cdn.example.com/v.mp4'),
     isAllowedAssetURL: jest.fn().mockReturnValue(true),
   };
-  const service = new MediaStreamService(new CentreRegistry([xmdCentre as unknown as BaseCentre]));
+  const downloads = { playbackURL: jest.fn().mockResolvedValue(null) };
+  const service = new MediaStreamService(new CentreRegistry([xmdCentre as unknown as BaseCentre]), downloads as unknown as DownloadService);
   const originURL = 'https://xmegadrive.com/videos/1';
   const id = encryptURLToShortToken(originURL);
 
@@ -45,6 +47,18 @@ describe('MediaStreamService', () => {
 
     await expect(service.stream(id, '', mockResponse() as never)).rejects.toBeInstanceOf(NotFoundException);
     expect(xmdCentre.getURL).not.toHaveBeenCalled();
+  });
+
+  it('redirects a downloaded video to its signed storage link without touching the source', async () => {
+    downloads.playbackURL.mockResolvedValueOnce('https://s3.example.com/media/x.mp4?sig=1');
+    xmdCentre.getURL.mockClear();
+    const res = Object.assign(mockResponse(), { redirect: jest.fn() });
+
+    await service.stream(id, 'bytes=0-', res as never);
+
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://s3.example.com/media/x.mp4?sig=1');
+    expect(xmdCentre.getURL).not.toHaveBeenCalled();
+    expect(mockedAxios).not.toHaveBeenCalled();
   });
 
   it('rejects a resolved video URL on a private host', async () => {
@@ -140,7 +154,7 @@ describe('MediaStreamService.preview', () => {
     getURL: jest.fn(),
     isAllowedAssetURL: jest.fn((url: string) => new URL(url).hostname === 'heavyfetish.com'),
   };
-  const service = new MediaStreamService(new CentreRegistry([centre as unknown as BaseCentre]));
+  const service = new MediaStreamService(new CentreRegistry([centre as unknown as BaseCentre]), { playbackURL: jest.fn() } as unknown as DownloadService);
 
   beforeEach(() => {
     mockedAxios.mockReset();

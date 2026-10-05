@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
+import { SocketAdapter } from './gateways/socket.adapter';
 import { parseCorsOrigins, resolveTrustProxy } from './shared/config/http';
 
 // Applies CORS, helmet, body limits, global prefix, and validation to the app.
@@ -28,6 +29,7 @@ export function configureApp(app: INestApplication): void {
     // Retry-After lets the app wait out a 429 before asking again.
     exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length', 'Retry-After'],
   });
+  app.useWebSocketAdapter(new SocketAdapter(app, origins));
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },

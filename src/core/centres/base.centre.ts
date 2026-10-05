@@ -167,6 +167,11 @@ export abstract class BaseCentre implements OnModuleDestroy {
     }
   }
 
+  // Drops a cached video URL so the next getURL resolves a fresh one, e.g. after the signed source link expired.
+  public forget(url: string): void {
+    this.URLCache.delete(url);
+  }
+
   // Search URL path for a slug; sources that need a trailing slash override it.
   protected searchPath(slug: string): string {
     return `/search/${encodeURIComponent(slug)}`;

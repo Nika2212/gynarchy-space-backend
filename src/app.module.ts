@@ -9,6 +9,7 @@ import { ImagesController } from './controllers/images.controller';
 import { MediaController } from './controllers/media.controller';
 import { PreviewsController } from './controllers/previews.controller';
 import { SecurityController } from './controllers/security.controller';
+import { DownloadsGateway } from './gateways/downloads.gateway';
 import { BaseCentre } from './core/centres/base.centre';
 import { CENTRES, CentreRegistry } from './core/centres/centre.registry';
 import { FVCCentre } from './core/centres/FVC.centre';
@@ -20,10 +21,12 @@ import { AlbumDocument, AlbumSchema } from './repositories/album.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
 import { AlbumService } from './services/album.service';
+import { DownloadService } from './services/download.service';
 import { ImageProxyService } from './services/image-proxy.service';
 import { MediaStreamService } from './services/media-stream.service';
 import { MediaService } from './services/media.service';
 import { SecurityService } from './services/security.service';
+import { StorageService } from './services/storage.service';
 import { validateEnv } from './shared/config/env.validation';
 
 // Configures JWT signing from JWT_SECRET with a 7-day lifetime.
@@ -86,6 +89,9 @@ export function mongoOptions(configService: ConfigService) {
     CentreRegistry,
     MediaService,
     MediaStreamService,
+    StorageService,
+    DownloadService,
+    DownloadsGateway,
     ImageProxyService,
     MediaRepository,
     AlbumService,

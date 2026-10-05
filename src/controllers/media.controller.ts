@@ -1,13 +1,16 @@
-import { Body, Controller, Delete, Get, Patch, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../core/public.decorator';
 import { SecurityGuard } from '../core/security.guard';
+import { DownloadDTO } from '../DTOs/download.DTO';
 import { MediaFlagDTO } from '../DTOs/media-flag.DTO';
 import { WatchPositionDTO } from '../DTOs/watch-position.DTO';
+import { DownloadService } from '../services/download.service';
 import { MediaStreamService } from '../services/media-stream.service';
 import { MediaService } from '../services/media.service';
 import { parsePage } from '../shared/paging';
+import { IDownloadJob, IDownloadSnapshot } from '../shared/interfaces/download.interface';
 import { IMediaContainer } from '../shared/interfaces/media-container.interface';
 import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
@@ -19,6 +22,7 @@ export class MediaController {
   constructor(
     private readonly mediaService: MediaService,
     private readonly mediaStreamService: MediaStreamService,
+    private readonly downloadService: DownloadService,
   ) {}
 
   @Get()
@@ -35,6 +39,13 @@ export class MediaController {
   // Returns every media the user has liked, favorited, downloaded, or started watching.
   public async findLibrary(@Res() res: Response): Promise<void> {
     const payload: IMediaLibrary = await this.mediaService.findLibrary();
+    res.status(200).json(payload);
+  }
+
+  @Get('downloads')
+  // Returns active and failed downloads with the storage usage, the same data the socket sends on connect.
+  public async findDownloads(@Res() res: Response): Promise<void> {
+    const payload: IDownloadSnapshot = this.downloadService.snapshot();
     res.status(200).json(payload);
   }
 
@@ -56,12 +67,23 @@ export class MediaController {
     return this.mediaStreamService.stream(id as string, range, res);
   }
 
-  @Get(':id/download')
-  // Placeholder download endpoint until file export is implemented.
-  public async download(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const { id } = req.params;
+  @Post(':id/download')
+  // Queues the video for download to storage; progress is pushed over the downloads socket.
+  public async download(@Req() req: Request, @Res() res: Response, @Body() body: DownloadDTO): Promise<void> {
+    const job: IDownloadJob = await this.downloadService.start(req.params.id as string, body.media);
+    res.status(202).json(job);
+  }
 
-    res.status(200).json({ message: `This action downloads media #${id}` });
+  @Delete(':id/download')
+  // Cancels an active download, dismisses a failed one, or deletes the stored copy.
+  public async removeDownload(@Req() req: Request, @Res() res: Response): Promise<void> {
+    const flags = await this.downloadService.remove(req.params.id as string);
+
+    if (flags) {
+      res.status(200).json(flags);
+    } else {
+      res.status(204).send();
+    }
   }
 
   @Patch(':id/favorite')

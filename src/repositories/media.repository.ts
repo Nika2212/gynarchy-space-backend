@@ -118,6 +118,50 @@ export class MediaRepository {
     return this.toFlags(existing, secret)!;
   }
 
+  // Marks one media as stored in the bucket, creating the row with its card when needed.
+  public async markDownloaded(identifier: string, media: IMediaSnapshot, downloadSize: number): Promise<MediaFlags> {
+    const secret = this.secret();
+    const identifierHash = hashIdentifier(identifier, secret);
+    const existing = await this.mediaModel.findOne({ identifierHash }).exec();
+    const download = { isDownloaded: true, downloadedAt: new Date(), downloadSize };
+
+    if (!existing) {
+      const created = await this.create(identifier, media, secret, download);
+      return this.toFlags(created, secret)!;
+    }
+
+    Object.assign(existing, this.encryptCatalog(identifier, media, secret), download);
+    await existing.save();
+    return this.toFlags(existing, secret)!;
+  }
+
+  // Clears the downloaded flag and deletes the row once nothing else is on it. Null when it was not stored.
+  public async clearDownloaded(identifier: string): Promise<MediaFlags | null> {
+    const secret = this.secret();
+    const identifierHash = hashIdentifier(identifier, secret);
+    const existing = await this.mediaModel.findOne({ identifierHash }).exec();
+
+    if (!existing) {
+      return null;
+    }
+
+    Object.assign(existing, { isDownloaded: false, downloadedAt: null, downloadSize: 0 });
+
+    if (this.isUnused(existing)) {
+      await this.mediaModel.deleteOne({ identifierHash }).exec();
+    } else {
+      await existing.save();
+    }
+
+    return this.toFlags(existing, secret)!;
+  }
+
+  // Size in bytes of the stored copy, or null when the media is not downloaded.
+  public async findDownloadSize(identifier: string): Promise<number | null> {
+    const row = await this.mediaModel.findOne({ identifierHash: hashIdentifier(identifier, this.secret()), isDownloaded: true }).exec();
+    return row ? (row.downloadSize ?? 0) : null;
+  }
+
   // Clears the whole watch history: history-only rows are deleted, flagged rows keep their flags.
   public async clearAllWatchHistory(): Promise<void> {
     const unflagged = { isLiked: false, isFavorite: false, isDownloaded: false };
@@ -210,6 +254,8 @@ export class MediaRepository {
       watchedAt: row.watchedAt ?? undefined,
       watchedTimes: row.watchedTimes ?? 0,
       watchPositionAt: row.watchPositionAt ?? undefined,
+      downloadedAt: row.downloadedAt ?? undefined,
+      downloadSize: row.downloadSize || undefined,
     };
   }
 

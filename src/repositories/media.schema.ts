@@ -52,6 +52,12 @@ export class MediaDocument {
   @Prop({ type: Date, default: null })
   watchedAt: Date | null;
 
+  @Prop({ type: Date, default: null })
+  downloadedAt: Date | null;
+
+  @Prop({ default: 0 })
+  downloadSize: number;
+
   @Prop({ required: true, default: 0 })
   watchedTimes: number;
 

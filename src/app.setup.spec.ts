@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { configureApp } from './app.setup';
+import { SocketAdapter } from './gateways/socket.adapter';
 
 function mockApp(config: Record<string, string | undefined>) {
   const instance = { set: jest.fn() };
@@ -11,6 +12,7 @@ function mockApp(config: Record<string, string | undefined>) {
     setGlobalPrefix: jest.fn(),
     enableShutdownHooks: jest.fn(),
     enableCors: jest.fn(),
+    useWebSocketAdapter: jest.fn(),
     useGlobalPipes: jest.fn(),
   };
   return { app: app as unknown as INestApplication, instance, raw: app };
@@ -32,6 +34,7 @@ describe('configureApp', () => {
       credentials: false,
       exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length', 'Retry-After'],
     });
+    expect(raw.useWebSocketAdapter).toHaveBeenCalledWith(expect.any(SocketAdapter));
     expect(raw.useGlobalPipes).toHaveBeenCalled();
   });
 

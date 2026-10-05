@@ -4,10 +4,14 @@ import type { Response } from 'express';
 import { CentreRegistry } from '../core/centres/centre.registry';
 import { isPublicHTTPHost } from '../shared/image-type';
 import { decryptShortTokenToURL } from '../shared/url-token';
+import { DownloadService } from './download.service';
 
 @Injectable()
 export class MediaStreamService {
-  constructor(private readonly centreRegistry: CentreRegistry) {}
+  constructor(
+    private readonly centreRegistry: CentreRegistry,
+    private readonly downloadService: DownloadService,
+  ) {}
 
   // Resolves the video URL and pipes the remote stream, including Range support.
   public async stream(id: string, range: string, response: Response): Promise<void> {
@@ -23,6 +27,12 @@ export class MediaStreamService {
     const centre = this.centreRegistry.findByURL(originURL);
     if (!centre) {
       throw new NotFoundException('Invalid media id');
+    }
+
+    const storedURL = await this.downloadService.playbackURL(id);
+    if (storedURL) {
+      response.redirect(HttpStatus.FOUND, storedURL);
+      return;
     }
 
     const decryptedURL = await centre.getURL(originURL);

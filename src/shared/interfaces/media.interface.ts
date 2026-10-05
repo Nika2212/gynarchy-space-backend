@@ -9,4 +9,6 @@ export interface IMedia extends IEntity {
   watchedAt?: Date;
   watchedTimes?: number;
   watchPositionAt?: number;
+  downloadedAt?: Date;
+  downloadSize?: number;
 }

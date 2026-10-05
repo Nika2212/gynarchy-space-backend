@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import request from 'supertest';
 import { SecurityGuard } from '../core/security.guard';
+import { DownloadService } from '../services/download.service';
 import { MediaStreamService } from '../services/media-stream.service';
 import { MediaService } from '../services/media.service';
 import type { IMediaContainer } from '../shared/interfaces/media-container.interface';
@@ -18,6 +19,9 @@ describe('MediaController', () => {
   let saveWatchPosition: jest.Mock;
   let clearWatchHistory: jest.Mock;
   let clearAllWatchHistory: jest.Mock;
+  let startDownload: jest.Mock;
+  let removeDownload: jest.Mock;
+  let downloadSnapshot: jest.Mock;
 
   const emptyPayload: IMediaContainer = {
     medias: [],
@@ -35,6 +39,9 @@ describe('MediaController', () => {
     saveWatchPosition = jest.fn().mockResolvedValue({ watchPositionAt: 30_000 });
     clearWatchHistory = jest.fn().mockResolvedValue({ watchPositionAt: null });
     clearAllWatchHistory = jest.fn().mockResolvedValue(undefined);
+    startDownload = jest.fn().mockResolvedValue({ identifier: 'abc', state: 'queued' });
+    removeDownload = jest.fn().mockResolvedValue(null);
+    downloadSnapshot = jest.fn().mockReturnValue({ jobs: [], storage: { isConfigured: true, usedBytes: 0, limitBytes: 1, freeBytes: 1 } });
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [MediaController],
@@ -54,6 +61,10 @@ describe('MediaController', () => {
         {
           provide: MediaStreamService,
           useValue: { stream },
+        },
+        {
+          provide: DownloadService,
+          useValue: { start: startDownload, remove: removeDownload, snapshot: downloadSnapshot },
         },
       ],
     })
@@ -126,11 +137,25 @@ describe('MediaController', () => {
     expect(stream).toHaveBeenCalledWith('abc', 'bytes=0-1', expect.anything());
   });
 
-  it('GET /media/:id/download returns a placeholder', async () => {
+  it('POST /media/:id/download queues the download with the card', async () => {
+    const media = { title: 't', duration: 1, postedAt: '', thumbnailSrc: [] };
+
+    await request(app.getHttpServer()).post('/media/abc/download').send({ media }).expect(202).expect({ identifier: 'abc', state: 'queued' });
+    expect(startDownload).toHaveBeenCalledWith('abc', media);
+  });
+
+  it('DELETE /media/:id/download returns flags when a stored copy was removed, 204 otherwise', async () => {
+    await request(app.getHttpServer()).delete('/media/abc/download').expect(204);
+
+    removeDownload.mockResolvedValue({ identifier: 'abc', isDownloaded: false });
+    await request(app.getHttpServer()).delete('/media/abc/download').expect(200).expect({ identifier: 'abc', isDownloaded: false });
+  });
+
+  it('GET /media/downloads returns the jobs and storage usage', async () => {
     await request(app.getHttpServer())
-      .get('/media/abc/download')
+      .get('/media/downloads')
       .expect(200)
-      .expect({ message: 'This action downloads media #abc' });
+      .expect({ jobs: [], storage: { isConfigured: true, usedBytes: 0, limitBytes: 1, freeBytes: 1 } });
   });
 
   it('PATCH /media/:id/favorite toggles favorite with the card', async () => {
