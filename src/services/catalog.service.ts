@@ -77,7 +77,8 @@ export class CatalogService {
     const keyword = this.keyword(query.keyword);
     this.assertPage(query.page);
     const terms = toSearchTerms(keyword);
-    const rows = keyword !== '' && terms.length === 0 ? [] : await this.catalogRepository.search(terms, query.page);
+    const random = query.random === 'true' && keyword === '';
+    const rows = random ? await this.catalogRepository.random() : keyword !== '' && terms.length === 0 ? [] : await this.catalogRepository.search(terms, query.page);
 
     return {
       medias: rows.flatMap((row) => {
@@ -86,7 +87,7 @@ export class CatalogService {
       }),
       meta: {
         currentPage: query.page,
-        isLastPage: rows.length < PER_PAGE_SIZE,
+        isLastPage: random ? rows.length === 0 : rows.length < PER_PAGE_SIZE,
       },
     };
   }

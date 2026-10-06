@@ -119,6 +119,13 @@ export class CatalogRepository implements OnModuleInit {
     }
   }
 
+  // One page of random rows. Samples extra rows first so unavailable videos can be dropped without a full scan.
+  public random(): Promise<ICatalogRow[]> {
+    return this.videos()
+      .aggregate<ICatalogRow>([{ $sample: { size: PER_PAGE_SIZE * 2 } }, { $match: AVAILABLE }, { $limit: PER_PAGE_SIZE }, { $project: CARD_FIELDS }])
+      .toArray();
+  }
+
   private textSearch(keyword: string, skip: number): Promise<ICatalogRow[]> {
     const textSearch: Filter<ICatalogRow> = { $text: { $search: keyword }, ...AVAILABLE };
     return this.videos()

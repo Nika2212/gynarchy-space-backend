@@ -3,4 +3,5 @@ export interface IFindAll {
   page: number;
   sort: string;
   filter: string;
+  random?: string;
 }
