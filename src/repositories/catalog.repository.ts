@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
-import { Collection } from 'mongodb';
+import { Collection, Filter } from 'mongodb';
 import { Connection } from 'mongoose';
 import { PER_PAGE_SIZE } from '../shared/paging';
 
@@ -12,7 +12,7 @@ const ID_MIN = ID_FACTOR;
 const ID_MAX = 4 * ID_FACTOR;
 
 export interface ICatalogRow {
-  _id: unknown;
+  _id: number;
   s?: string;
   n?: string;
   d?: number;
@@ -21,16 +21,17 @@ export interface ICatalogRow {
   c?: number;
   p?: string;
   x?: string;
+  o?: true;
 }
 
-const CARD_FIELDS = { s: 1, n: 1, d: 1, t: 1, u: 1, c: 1, p: 1, x: 1 } as const;
+const CARD_FIELDS = { s: 1, n: 1, d: 1, t: 1, u: 1, c: 1, p: 1, x: 1 };
 
 // Videos whose page is gone are stored with o: true and are not searchable.
-const AVAILABLE = {
+const AVAILABLE: Filter<ICatalogRow> = {
   o: { $exists: false },
   s: { $type: 'string', $ne: '' },
   _id: { $gte: ID_MIN, $lt: ID_MAX },
-} as const;
+};
 
 @Injectable()
 export class CatalogRepository implements OnModuleInit {
@@ -64,8 +65,9 @@ export class CatalogRepository implements OnModuleInit {
       return videos.find(AVAILABLE, { projection: CARD_FIELDS }).sort({ _id: -1 }).skip(skip).limit(PER_PAGE_SIZE).toArray();
     }
 
+    const textSearch: Filter<ICatalogRow> = { $text: { $search: keyword }, ...AVAILABLE };
     return videos
-      .find({ $text: { $search: keyword }, ...AVAILABLE }, { projection: { ...CARD_FIELDS, score: { $meta: 'textScore' } } })
+      .find(textSearch, { projection: { ...CARD_FIELDS, score: { $meta: 'textScore' } } })
       .sort({ score: { $meta: 'textScore' }, _id: -1 })
       .skip(skip)
       .limit(PER_PAGE_SIZE)
