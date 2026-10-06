@@ -10,6 +10,7 @@ import { ImagesController } from './controllers/images.controller';
 import { MediaController } from './controllers/media.controller';
 import { PreviewsController } from './controllers/previews.controller';
 import { SecurityController } from './controllers/security.controller';
+import { SettingsController } from './controllers/settings.controller';
 import { DownloadsGateway } from './gateways/downloads.gateway';
 import { BaseCentre } from './core/centres/base.centre';
 import { CENTRES, CentreRegistry } from './core/centres/centre.registry';
@@ -24,6 +25,8 @@ import { DownloadRepository } from './repositories/download.repository';
 import { DownloadDocument, DownloadSchema } from './repositories/download.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
+import { SettingsRepository } from './repositories/settings.repository';
+import { SettingsDocument, SettingsSchema } from './repositories/settings.schema';
 import { AlbumService } from './services/album.service';
 import { CatalogService } from './services/catalog.service';
 import { DatabaseIndexesService } from './services/database-indexes.service';
@@ -79,9 +82,10 @@ export function mongoOptions(configService: ConfigService) {
       { name: MediaDocument.name, schema: MediaSchema },
       { name: AlbumDocument.name, schema: AlbumSchema },
       { name: DownloadDocument.name, schema: DownloadSchema },
+      { name: SettingsDocument.name, schema: SettingsSchema },
     ]),
   ],
-  controllers: [HealthController, SecurityController, MediaController, CatalogController, ImagesController, PreviewsController, AlbumsController],
+  controllers: [HealthController, SecurityController, MediaController, CatalogController, ImagesController, PreviewsController, AlbumsController, SettingsController],
   providers: [
     SecurityService,
     SecurityGuard,
@@ -106,6 +110,7 @@ export function mongoOptions(configService: ConfigService) {
     AlbumService,
     AlbumRepository,
     DownloadRepository,
+    SettingsRepository,
     DatabaseIndexesService,
   ],
 })

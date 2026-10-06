@@ -41,6 +41,8 @@ const CATEGORY_AND_SLUG = ['g', 's'];
 const DESCRIPTION = 'x';
 const PREFIX_PATHS = [TITLE, ...PEOPLE_AND_TAGS, ...CATEGORY_AND_SLUG];
 const MIN_PREFIX_LENGTH = 2;
+const SHUFFLE_WINDOW_MS = 15 * 60 * 1000;
+const SHUFFLE_SIZE = PER_PAGE_SIZE * 40;
 
 // One term matches when it hits a field exactly, with typos, or (for the last term) as a word start.
 function termClause(term: string, isLast: boolean): Record<string, unknown> {
@@ -82,6 +84,7 @@ export function buildFuzzyPipeline(terms: string[], skip: number): Document[] {
 @Injectable()
 export class CatalogRepository implements OnModuleInit {
   private readonly logger = new Logger(CatalogRepository.name);
+  private shuffle?: { window: number; ids: Promise<number[]> };
 
   constructor(@InjectConnection() private readonly connection: Connection) {}
 
@@ -119,11 +122,38 @@ export class CatalogRepository implements OnModuleInit {
     }
   }
 
-  // One page of random rows. Samples extra rows first so unavailable videos can be dropped without a full scan.
-  public random(): Promise<ICatalogRow[]> {
-    return this.videos()
-      .aggregate<ICatalogRow>([{ $sample: { size: PER_PAGE_SIZE * 2 } }, { $match: AVAILABLE }, { $limit: PER_PAGE_SIZE }, { $project: CARD_FIELDS }])
+  // One page of the current shuffle. The order stays the same until the next shuffle window.
+  public async random(page: number): Promise<ICatalogRow[]> {
+    const ids = (await this.shuffledIds()).slice((page - 1) * PER_PAGE_SIZE, page * PER_PAGE_SIZE);
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await this.videos()
+      .find({ _id: { $in: ids } }, { projection: CARD_FIELDS })
       .toArray();
+    const byId = new Map(rows.map((row) => [String(row._id), row]));
+    return ids.flatMap((id) => byId.get(String(id)) ?? []);
+  }
+
+  // Samples extra rows first so unavailable videos can be dropped without a full scan. $sample may repeat rows.
+  private shuffledIds(): Promise<number[]> {
+    const window = Math.floor(Date.now() / SHUFFLE_WINDOW_MS);
+    if (this.shuffle?.window === window) {
+      return this.shuffle.ids;
+    }
+
+    const ids = this.videos()
+      .aggregate<{ _id: number }>([{ $sample: { size: SHUFFLE_SIZE * 2 } }, { $match: AVAILABLE }, { $project: { _id: 1 } }])
+      .toArray()
+      .then((rows) => [...new Map(rows.map((row) => [String(row._id), row._id])).values()].slice(0, SHUFFLE_SIZE));
+    this.shuffle = { window, ids };
+    ids.catch(() => {
+      if (this.shuffle?.ids === ids) {
+        this.shuffle = undefined;
+      }
+    });
+    return ids;
   }
 
   private textSearch(keyword: string, skip: number): Promise<ICatalogRow[]> {
