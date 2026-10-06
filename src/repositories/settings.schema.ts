@@ -8,6 +8,9 @@ export class SettingsDocument {
 
   @Prop({ required: true, default: false })
   randomizeFeed: boolean;
+
+  @Prop({ required: true, default: false })
+  randomizeSearch: boolean;
 }
 
 export const SettingsSchema = SchemaFactory.createForClass(SettingsDocument);

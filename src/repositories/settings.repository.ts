@@ -26,6 +26,7 @@ export class SettingsRepository {
     return {
       nativeSearch: row?.nativeSearch === true,
       randomizeFeed: row?.randomizeFeed === true,
+      randomizeSearch: row?.randomizeSearch === true,
     };
   }
 }

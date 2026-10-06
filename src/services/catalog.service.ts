@@ -77,8 +77,9 @@ export class CatalogService {
     const keyword = this.keyword(query.keyword);
     this.assertPage(query.page);
     const terms = toSearchTerms(keyword);
-    const random = query.random === 'true' && keyword === '';
-    const rows = random ? await this.catalogRepository.random(query.page) : keyword !== '' && terms.length === 0 ? [] : await this.catalogRepository.search(terms, query.page);
+    const random = query.random === 'true';
+    const rows =
+      random && keyword === '' ? await this.catalogRepository.random(query.page) : keyword !== '' && terms.length === 0 ? [] : await this.catalogRepository.search(terms, query.page, random);
 
     return {
       medias: rows.flatMap((row) => {

@@ -41,9 +41,9 @@ describe('CatalogService', () => {
     await service.search({ keyword: null as unknown as string, page: 2, sort: '', filter: '' });
     await service.search({ keyword: '   ', page: 1, sort: '', filter: '' });
 
-    expect(search).toHaveBeenNthCalledWith(1, [], 1);
-    expect(search).toHaveBeenNthCalledWith(2, [], 2);
-    expect(search).toHaveBeenNthCalledWith(3, [], 1);
+    expect(search).toHaveBeenNthCalledWith(1, [], 1, false);
+    expect(search).toHaveBeenNthCalledWith(2, [], 2, false);
+    expect(search).toHaveBeenNthCalledWith(3, [], 1, false);
   });
 
   it('searches the cleaned keyword and marks a full page as not last', async () => {
@@ -51,7 +51,7 @@ describe('CatalogService', () => {
 
     const page = await service.search({ keyword: '  -latex   "mistress"\\ ', page: 4, sort: '', filter: '' });
 
-    expect(search).toHaveBeenCalledWith(['latex', 'mistress'], 4);
+    expect(search).toHaveBeenCalledWith(['latex', 'mistress'], 4, false);
     expect(page.medias).toEqual([]);
     expect(page.meta).toEqual({ currentPage: 4, isLastPage: false });
   });

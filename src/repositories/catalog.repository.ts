@@ -60,8 +60,13 @@ function termClause(term: string, isLast: boolean): Record<string, unknown> {
   return { compound: { should, minimumShouldMatch: 1 } };
 }
 
+// A random page picks from the best SHUFFLE_SIZE matches, so it stays relevant and bounded.
+function pageStages(skip: number, random: boolean): Document[] {
+  return random ? [{ $limit: SHUFFLE_SIZE }, { $sample: { size: PER_PAGE_SIZE } }] : [{ $skip: skip }, { $limit: PER_PAGE_SIZE }];
+}
+
 // Atlas Search pipeline: every term is fuzzy-matched across fields, whole-phrase matches in the title rank first.
-export function buildFuzzyPipeline(terms: string[], skip: number): Document[] {
+export function buildFuzzyPipeline(terms: string[], skip: number, random = false): Document[] {
   const clauses = terms.map((term, index) => termClause(term, index === terms.length - 1));
 
   return [
@@ -75,8 +80,7 @@ export function buildFuzzyPipeline(terms: string[], skip: number): Document[] {
       },
     },
     { $match: AVAILABLE },
-    { $skip: skip },
-    { $limit: PER_PAGE_SIZE },
+    ...pageStages(skip, random),
     { $project: { ...CARD_FIELDS, score: { $meta: 'searchScore' } } },
   ];
 }
@@ -105,8 +109,8 @@ export class CatalogRepository implements OnModuleInit {
     }
   }
 
-  // One page of catalog rows. No terms returns the newest videos; otherwise a typo-tolerant search, best match first.
-  public async search(terms: string[], page: number): Promise<ICatalogRow[]> {
+  // One page of catalog rows. No terms returns the newest videos; otherwise a typo-tolerant search, best match first or random.
+  public async search(terms: string[], page: number, random = false): Promise<ICatalogRow[]> {
     const skip = (page - 1) * PER_PAGE_SIZE;
 
     if (terms.length === 0) {
@@ -114,11 +118,11 @@ export class CatalogRepository implements OnModuleInit {
     }
 
     try {
-      return await this.videos().aggregate<ICatalogRow>(buildFuzzyPipeline(terms, skip)).toArray();
+      return await this.videos().aggregate<ICatalogRow>(buildFuzzyPipeline(terms, skip, random)).toArray();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(`Fuzzy search failed, using the text index instead: ${message}`);
-      return this.textSearch(terms.join(' '), skip);
+      return random ? this.randomTextSearch(terms.join(' ')) : this.textSearch(terms.join(' '), skip);
     }
   }
 
@@ -163,6 +167,12 @@ export class CatalogRepository implements OnModuleInit {
       .sort({ score: { $meta: 'textScore' }, _id: -1 })
       .skip(skip)
       .limit(PER_PAGE_SIZE)
+      .toArray();
+  }
+
+  private randomTextSearch(keyword: string): Promise<ICatalogRow[]> {
+    return this.videos()
+      .aggregate<ICatalogRow>([{ $match: { $text: { $search: keyword }, ...AVAILABLE } }, ...pageStages(0, true), { $project: CARD_FIELDS }])
       .toArray();
   }
 

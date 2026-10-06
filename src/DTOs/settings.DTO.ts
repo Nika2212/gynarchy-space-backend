@@ -9,4 +9,8 @@ export class SettingsDTO {
   @IsOptional()
   @IsBoolean()
   randomizeFeed?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  randomizeSearch?: boolean;
 }
