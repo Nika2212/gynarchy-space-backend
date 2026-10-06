@@ -5,6 +5,7 @@ import { IMediaContainer } from '../shared/interfaces/media-container.interface'
 import { IMediaInfo } from '../shared/interfaces/media-info.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
 import { PER_PAGE_SIZE } from '../shared/paging';
+import { toSearchTerms } from '../shared/search-terms';
 import { assertValidHTTPURL, encryptURLToShortToken } from '../shared/url-token';
 
 const MAX_SEARCH_KEYWORD_LENGTH = 200;
@@ -75,8 +76,8 @@ export class CatalogService {
   public async search(query: IFindAll): Promise<IMediaContainer> {
     const keyword = this.keyword(query.keyword);
     this.assertPage(query.page);
-    const text = toTextSearch(keyword);
-    const rows = text === null ? [] : await this.catalogRepository.search(text, query.page);
+    const terms = toSearchTerms(keyword);
+    const rows = keyword !== '' && terms.length === 0 ? [] : await this.catalogRepository.search(terms, query.page);
 
     return {
       medias: rows.flatMap((row) => {
@@ -210,20 +211,6 @@ export class CatalogService {
       return false;
     }
   }
-}
-
-// Empty means browse newest. Null means the keyword had no searchable terms.
-function toTextSearch(keyword: string): string | null {
-  if (keyword === '') {
-    return '';
-  }
-
-  const terms = keyword
-    .split(/\s+/)
-    .map((term) => term.replace(/^-+/, '').replace(/["\\]/g, '').trim())
-    .filter((term) => term.length > 0);
-
-  return terms.length > 0 ? terms.join(' ') : null;
 }
 
 function toDocumentId(value: unknown): number | undefined {

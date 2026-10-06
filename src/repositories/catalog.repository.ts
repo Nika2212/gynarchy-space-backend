@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
-import { Collection, Filter } from 'mongodb';
+import { Collection, Document, Filter } from 'mongodb';
 import { Connection } from 'mongoose';
 import { PER_PAGE_SIZE } from '../shared/paging';
+import { maxEditsFor, minimumTermsFor } from '../shared/search-terms';
 
 export const CATALOG_COLLECTION = 'catalog';
 
@@ -33,6 +34,51 @@ const AVAILABLE: Filter<ICatalogRow> = {
   _id: { $gte: ID_MIN, $lt: ID_MAX },
 };
 
+const SEARCH_INDEX = 'default';
+const TITLE = 'n';
+const PEOPLE_AND_TAGS = ['m', 'k'];
+const CATEGORY_AND_SLUG = ['g', 's'];
+const DESCRIPTION = 'x';
+const PREFIX_PATHS = [TITLE, ...PEOPLE_AND_TAGS, ...CATEGORY_AND_SLUG];
+const MIN_PREFIX_LENGTH = 2;
+
+// One term matches when it hits a field exactly, with typos, or (for the last term) as a word start.
+function termClause(term: string, isLast: boolean): Record<string, unknown> {
+  const maxEdits = maxEditsFor(term);
+  const fuzzy = maxEdits === 0 ? undefined : { maxEdits, prefixLength: 1, maxExpansions: 50 };
+  const field = (path: string | string[], boost: number): Record<string, unknown> => ({
+    text: { query: term, path, score: { boost: { value: boost } }, ...(fuzzy ? { fuzzy } : {}) },
+  });
+
+  const should: Record<string, unknown>[] = [field(TITLE, 10), field(PEOPLE_AND_TAGS, 6), field(CATEGORY_AND_SLUG, 3), field(DESCRIPTION, 1)];
+  if (isLast && term.length >= MIN_PREFIX_LENGTH) {
+    should.push({ wildcard: { query: `${term}*`, path: PREFIX_PATHS, allowAnalyzedField: true, score: { boost: { value: 2 } } } });
+  }
+
+  return { compound: { should, minimumShouldMatch: 1 } };
+}
+
+// Atlas Search pipeline: every term is fuzzy-matched across fields, whole-phrase matches in the title rank first.
+export function buildFuzzyPipeline(terms: string[], skip: number): Document[] {
+  const clauses = terms.map((term, index) => termClause(term, index === terms.length - 1));
+
+  return [
+    {
+      $search: {
+        index: SEARCH_INDEX,
+        compound: {
+          must: [{ compound: { should: clauses, minimumShouldMatch: minimumTermsFor(terms.length) } }],
+          should: terms.length > 1 ? [{ phrase: { query: terms, path: TITLE, slop: 3, score: { boost: { value: 20 } } } }] : [],
+        },
+      },
+    },
+    { $match: AVAILABLE },
+    { $skip: skip },
+    { $limit: PER_PAGE_SIZE },
+    { $project: { ...CARD_FIELDS, score: { $meta: 'searchScore' } } },
+  ];
+}
+
 @Injectable()
 export class CatalogRepository implements OnModuleInit {
   private readonly logger = new Logger(CatalogRepository.name);
@@ -56,17 +102,26 @@ export class CatalogRepository implements OnModuleInit {
     }
   }
 
-  // One page of catalog rows. An empty keyword returns the newest videos; otherwise a text search, best match first.
-  public async search(keyword: string, page: number): Promise<ICatalogRow[]> {
+  // One page of catalog rows. No terms returns the newest videos; otherwise a typo-tolerant search, best match first.
+  public async search(terms: string[], page: number): Promise<ICatalogRow[]> {
     const skip = (page - 1) * PER_PAGE_SIZE;
-    const videos = this.videos();
 
-    if (keyword === '') {
-      return videos.find(AVAILABLE, { projection: CARD_FIELDS }).sort({ _id: -1 }).skip(skip).limit(PER_PAGE_SIZE).toArray();
+    if (terms.length === 0) {
+      return this.videos().find(AVAILABLE, { projection: CARD_FIELDS }).sort({ _id: -1 }).skip(skip).limit(PER_PAGE_SIZE).toArray();
     }
 
+    try {
+      return await this.videos().aggregate<ICatalogRow>(buildFuzzyPipeline(terms, skip)).toArray();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.warn(`Fuzzy search failed, using the text index instead: ${message}`);
+      return this.textSearch(terms.join(' '), skip);
+    }
+  }
+
+  private textSearch(keyword: string, skip: number): Promise<ICatalogRow[]> {
     const textSearch: Filter<ICatalogRow> = { $text: { $search: keyword }, ...AVAILABLE };
-    return videos
+    return this.videos()
       .find(textSearch, { projection: { ...CARD_FIELDS, score: { $meta: 'textScore' } } })
       .sort({ score: { $meta: 'textScore' }, _id: -1 })
       .skip(skip)
