@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CENTRES, CentreRegistry } from '../core/centres/centre.registry';
 import { PER_PAGE_SIZE } from '../shared/paging';
@@ -6,6 +7,7 @@ import { MediaRepository } from '../repositories/media.repository';
 import type { IMediaInfo } from '../shared/interfaces/media-info.interface';
 import type { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { encryptURLToShortToken } from '../shared/url-token';
+import { CatalogService } from './catalog.service';
 import { MediaService } from './media.service';
 
 function mockMedia(overrides: Partial<IMediaInfo> = {}): IMediaInfo {
@@ -30,6 +32,8 @@ const SNAPSHOT: IMediaSnapshot = {
 describe('MediaService', () => {
   let service: MediaService;
   let search: jest.Mock;
+  let catalogSearch: jest.Mock;
+  let nativeSearch: string | undefined;
   let findLibrary: jest.Mock;
   let toggleLike: jest.Mock;
   let toggleFavorite: jest.Mock;
@@ -39,6 +43,8 @@ describe('MediaService', () => {
 
   beforeEach(async () => {
     search = jest.fn();
+    catalogSearch = jest.fn();
+    nativeSearch = 'false';
     findLibrary = jest.fn().mockResolvedValue([mockMedia({ identifier: 'a', isLiked: true })]);
     toggleLike = jest.fn().mockResolvedValue({ isLiked: true });
     toggleFavorite = jest.fn().mockResolvedValue({ isFavorite: true });
@@ -64,6 +70,8 @@ describe('MediaService', () => {
             clearAllWatchHistory,
           },
         },
+        { provide: CatalogService, useValue: { search: catalogSearch } },
+        { provide: ConfigService, useValue: { get: (key: string) => (key === 'NATIVE_SEARCH' ? nativeSearch : undefined) } },
       ],
     }).compile();
 
@@ -87,6 +95,53 @@ describe('MediaService', () => {
     const out = await service.findAll({ keyword: 'k', page: 1, sort: '', filter: '' });
 
     expect(out.meta.isLastPage).toBe(false);
+  });
+
+  it('findAll reads the catalog when NATIVE_SEARCH is true and skips the centres', async () => {
+    nativeSearch = ' true ';
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MediaService,
+        { provide: CENTRES, useValue: [{ search, source: 'xmd' }] },
+        CentreRegistry,
+        {
+          provide: MediaRepository,
+          useValue: { findLibrary, toggleLike, toggleFavorite, saveWatchPosition, clearWatchHistory, clearAllWatchHistory },
+        },
+        { provide: CatalogService, useValue: { search: catalogSearch } },
+        { provide: ConfigService, useValue: { get: (key: string) => (key === 'NATIVE_SEARCH' ? nativeSearch : undefined) } },
+      ],
+    }).compile();
+    const native = module.get(MediaService);
+    const page = { medias: [mockMedia({ identifier: 'db' })], meta: { currentPage: 1, isLastPage: true } };
+    catalogSearch.mockResolvedValue(page);
+
+    await expect(native.findAll({ keyword: 'latex', page: 1, sort: '', filter: '' })).resolves.toEqual(page);
+    expect(catalogSearch).toHaveBeenCalledWith({ keyword: 'latex', page: 1, sort: '', filter: '' });
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it('findAll keeps the centre search when NATIVE_SEARCH is missing', async () => {
+    nativeSearch = undefined;
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MediaService,
+        { provide: CENTRES, useValue: [{ search, source: 'xmd' }] },
+        CentreRegistry,
+        {
+          provide: MediaRepository,
+          useValue: { findLibrary, toggleLike, toggleFavorite, saveWatchPosition, clearWatchHistory, clearAllWatchHistory },
+        },
+        { provide: CatalogService, useValue: { search: catalogSearch } },
+        { provide: ConfigService, useValue: { get: () => undefined } },
+      ],
+    }).compile();
+    search.mockResolvedValue([mockMedia({ identifier: 'live' })]);
+
+    const page = await module.get(MediaService).findAll({ keyword: 'k', page: 1, sort: '', filter: '' });
+
+    expect(page.medias).toEqual([mockMedia({ identifier: 'live' })]);
+    expect(catalogSearch).not.toHaveBeenCalled();
   });
 
   it('propagates errors when every centre fails', async () => {

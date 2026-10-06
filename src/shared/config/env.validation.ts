@@ -29,5 +29,19 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     }
   }
 
+  assertNativeSearch(config.NATIVE_SEARCH);
+
   return config;
+}
+
+// Missing means the live search stays on the centres. Any other value than true or false is a typo and stops boot.
+function assertNativeSearch(value: unknown): void {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    return;
+  }
+
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized !== 'true' && normalized !== 'false') {
+    throw new Error('NATIVE_SEARCH must be true or false');
+  }
 }

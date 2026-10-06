@@ -44,6 +44,17 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...valid, CORS_ORIGIN: ' , ' })).toThrow('CORS_ORIGIN is required');
   });
 
+  it('accepts NATIVE_SEARCH true or false and treats it as optional', () => {
+    expect(validateEnv({ ...valid, NATIVE_SEARCH: 'true' })).toEqual({ ...valid, NATIVE_SEARCH: 'true' });
+    expect(validateEnv({ ...valid, NATIVE_SEARCH: ' FALSE ' })).toEqual({ ...valid, NATIVE_SEARCH: ' FALSE ' });
+    expect(validateEnv({ ...valid, NATIVE_SEARCH: '' })).toEqual({ ...valid, NATIVE_SEARCH: '' });
+  });
+
+  it('throws when NATIVE_SEARCH is not true or false', () => {
+    expect(() => validateEnv({ ...valid, NATIVE_SEARCH: 'yes' })).toThrow('NATIVE_SEARCH must be true or false');
+    expect(() => validateEnv({ ...valid, NATIVE_SEARCH: 1 })).toThrow('NATIVE_SEARCH must be true or false');
+  });
+
   it('throws when CORS_ORIGIN contains an invalid origin', () => {
     expect(() => validateEnv({ ...valid, CORS_ORIGIN: 'http://ok.example,not-a-url' })).toThrow(
       'CORS_ORIGIN contains an invalid origin: not-a-url',

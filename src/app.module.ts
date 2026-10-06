@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AlbumsController } from './controllers/albums.controller';
+import { CatalogController } from './controllers/catalog.controller';
 import { HealthController } from './controllers/health.controller';
 import { ImagesController } from './controllers/images.controller';
 import { MediaController } from './controllers/media.controller';
@@ -17,12 +18,14 @@ import { HFCentre } from './core/centres/HF.centre';
 import { XMDCentre } from './core/centres/XMD.centre';
 import { SecurityGuard } from './core/security.guard';
 import { AlbumRepository } from './repositories/album.repository';
+import { CatalogRepository } from './repositories/catalog.repository';
 import { AlbumDocument, AlbumSchema } from './repositories/album.schema';
 import { DownloadRepository } from './repositories/download.repository';
 import { DownloadDocument, DownloadSchema } from './repositories/download.schema';
 import { MediaRepository } from './repositories/media.repository';
 import { MediaDocument, MediaSchema } from './repositories/media.schema';
 import { AlbumService } from './services/album.service';
+import { CatalogService } from './services/catalog.service';
 import { DatabaseIndexesService } from './services/database-indexes.service';
 import { DownloadService } from './services/download.service';
 import { ImageProxyService } from './services/image-proxy.service';
@@ -78,7 +81,7 @@ export function mongoOptions(configService: ConfigService) {
       { name: DownloadDocument.name, schema: DownloadSchema },
     ]),
   ],
-  controllers: [HealthController, SecurityController, MediaController, ImagesController, PreviewsController, AlbumsController],
+  controllers: [HealthController, SecurityController, MediaController, CatalogController, ImagesController, PreviewsController, AlbumsController],
   providers: [
     SecurityService,
     SecurityGuard,
@@ -92,12 +95,14 @@ export function mongoOptions(configService: ConfigService) {
     },
     CentreRegistry,
     MediaService,
+    CatalogService,
     MediaStreamService,
     StorageService,
     DownloadService,
     DownloadsGateway,
     ImageProxyService,
     MediaRepository,
+    CatalogRepository,
     AlbumService,
     AlbumRepository,
     DownloadRepository,

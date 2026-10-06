@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CentreRegistry } from '../core/centres/centre.registry';
 import { MediaRepository } from '../repositories/media.repository';
 import { decryptShortTokenToURL } from '../shared/url-token';
@@ -7,16 +8,27 @@ import { IMediaLibrary } from '../shared/interfaces/media-library.interface';
 import { IMediaSnapshot } from '../shared/interfaces/media-snapshot.interface';
 import { IMeta } from '../shared/interfaces/meta.interface';
 import { IFindAll } from '../shared/interfaces/query.interface';
+import { CatalogService } from './catalog.service';
 
 @Injectable()
 export class MediaService {
+  private readonly nativeSearch: boolean;
+
   constructor(
     private readonly centreRegistry: CentreRegistry,
     private readonly mediaRepository: MediaRepository,
-  ) {}
+    private readonly catalogService: CatalogService,
+    configService: ConfigService,
+  ) {
+    this.nativeSearch = configService.get<string>('NATIVE_SEARCH')?.trim().toLowerCase() === 'true';
+  }
 
-  // Searches every centre and returns one merged page of results. Nothing is read from or written to the database.
+  // NATIVE_SEARCH=true reads the catalog. Otherwise every centre is searched and nothing is read from the database.
   public async findAll(query: IFindAll): Promise<IMediaContainer> {
+    if (this.nativeSearch) {
+      return this.catalogService.search(query);
+    }
+
     const { medias, isLastPage } = await this.centreRegistry.search(query.keyword, query.page);
     const meta: IMeta = {
       currentPage: query.page,
